@@ -1,0 +1,23 @@
+# name: test/sql/simple_encryption.test
+# description: test simple_encryption extension
+# group: [simple_encryption]
+
+# Before we load the extension, this will fail
+statement error
+SELECT simple_encryption('Sam');
+----
+Catalog Error: Scalar Function with name simple_encryption does not exist!
+
+# Require statement will ensure this test is run with this extension loaded
+require simple_encryption
+
+# Confirm the extension works
+query I
+SELECT simple_encryption('Sam');
+----
+SimpleEncryption Sam 🐥
+
+query I
+SELECT simple_encryption_openssl_version('Michael') ILIKE 'SimpleEncryption Michael, my linked OpenSSL version is OpenSSL%';
+----
+true

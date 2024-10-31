@@ -75,7 +75,7 @@ if __name__ == "__main__":
     replace_everywhere("<extension_name>", name_extension)
 
     string_to_replace = name_extension
-    string_to_find = "quack"
+    string_to_find = "simple_encryption"
 
     # rename files
     os.rename(f"test/sql/{string_to_find}.test", f"test/sql/{string_to_replace}.test")
