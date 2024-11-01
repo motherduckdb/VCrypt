@@ -1,8 +1,18 @@
-//
-// Created by Lotte Felius on 30/10/2024.
-//
+#pragma once
 
-#ifndef DUCKDB_SIMPLE_ENCRYPTION_STATE_HPP
-#define DUCKDB_SIMPLE_ENCRYPTION_STATE_HPP
+#include "duckdb.hpp"
+#include "duckdb/common/encryption_state.hpp"
 
-#endif // DUCKDB_SIMPLE_ENCRYPTION_STATE_HPP
+namespace duckdb {
+
+class SimpleEncryptionState : public ClientContextState {
+
+public:
+  explicit SimpleEncryptionState(shared_ptr<ClientContext> context);
+
+public:
+  shared_ptr<EncryptionState> encryption_state;
+};
+
+} // namespace duckdb
+

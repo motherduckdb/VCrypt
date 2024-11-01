@@ -15,7 +15,14 @@ require simple_encryption
 query I
 SELECT encrypt('testtesttesttesttest');
 ----
-Test function \xADw\xAA\xF4\x16$\x07)
+Test function \xADw\xAA\xF4\x16$\x07)\xD3\xDD.8-\xD8\xC1 :z\xA0rp
+
+
+# Confirm the extension works
+query I
+SELECT encrypt('Andere random data');
+----
+Test function \x98|\xBD\xE5\x10$T/\xC6\xD69#4\x9D\xD65:~\x02
 
 ## Confirm the extension works
 #query I

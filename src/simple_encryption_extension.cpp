@@ -13,13 +13,19 @@
 #include "mbedtls_wrapper.hpp"
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 #include "duckdb/common/types/blob.hpp"
+#include "simple_encryption_state.hpp"
+#include "duckdb/main/connection_manager.hpp"
 
 // OpenSSL linked through vcpkg
 #include <openssl/opensslv.h>
 
+// somewhere initialize the simpleencryptionstate here
+
+
 namespace duckdb {
 
 inline void SimpleEncryptionScalarFun(DataChunk &args, ExpressionState &state, Vector &result) {
+
     auto &name_vector = args.data[0];
     UnaryExecutor::Execute<string_t, string_t>(
 	    name_vector, result, args.size(),
@@ -39,24 +45,15 @@ inline void SimpleEncryptionOpenSSLVersionScalarFun(DataChunk &args, ExpressionS
         });
 }
 
-//unsigned char* SetIV(){
-//
-//  unsigned char iv[16];
-//  memcpy((void*)iv, "12345678901", 12);
-//
-//  // TODO; construct nonce based on immutable ROW_ID + hash(col_name)
-//  iv[12] = 0x00;
-//  iv[13] = 0x00;
-//  iv[14] = 0x00;
-//  iv[15] = 0x00;
-//
-//  return iv;
-//};
+shared_ptr<EncryptionState> InitializeCryptoState(){
+
+  // for now just do MBEDTLS here
+  shared_ptr<EncryptionState> encryption_state = duckdb_mbedtls::MbedTlsWrapper::AESGCMStateMBEDTLSFactory().CreateEncryptionState();
+
+  return encryption_state;
+}
 
 shared_ptr<EncryptionState> InitializeEncryption(){
-  duckdb_mbedtls::MbedTlsWrapper::AESGCMStateMBEDTLSFactory mbedtls_factory;
-  shared_ptr<EncryptionState> encryption_state;
-  encryption_state = mbedtls_factory.CreateEncryptionState();
 
   // For now, hardcode everything
   const string key = TEST_KEY;
@@ -70,14 +67,52 @@ shared_ptr<EncryptionState> InitializeEncryption(){
   iv[14] = 0x00;
   iv[15] = 0x00;
 
+  auto encryption_state = InitializeCryptoState();
+
   encryption_state->InitializeEncryption(iv, 16, &key);
 
   return encryption_state;
 }
 
-inline void EncryptValue(DataChunk &args, ExpressionState &state, Vector &result) {
+shared_ptr<EncryptionState> InitializeDecryption(){
+
+  // For now, hardcode everything
+  const string key = TEST_KEY;
+  unsigned char tag[16];
+  unsigned char iv[16];
+  memcpy((void*)iv, "12345678901", 12);
+  //
+  //  // TODO; construct nonce based on immutable ROW_ID + hash(col_name)
+  iv[12] = 0x00;
+  iv[13] = 0x00;
+  iv[14] = 0x00;
+  iv[15] = 0x00;
+
+  auto decryption_state = InitializeCryptoState();
+
+  decryption_state->InitializeDecryption(iv, 16, &key);
+
+  return decryption_state;
+
+}
+
+inline const uint8_t* DecryptValue(uint8_t *buffer, size_t size){
 
   // Initialize Encryption
+  auto encryption_state = InitializeDecryption();
+
+  // Change this to MAX_BUFFER_SIZE for better performance
+  uint8_t decryption_buffer[MAX_BUFFER_SIZE];
+  uint8_t* temp_buf = decryption_buffer;
+
+  encryption_state->Process(buffer, size, temp_buf, size);
+
+  return temp_buf;
+}
+
+
+inline void EncryptValue(DataChunk &args, ExpressionState &state, Vector &result) {
+
   auto encryption_state = InitializeEncryption();
 
   uint8_t encryption_buffer[MAX_BUFFER_SIZE];
@@ -89,23 +124,33 @@ inline void EncryptValue(DataChunk &args, ExpressionState &state, Vector &result
       name_vector, result, args.size(),
       [&](string_t name) {
 
-        auto const size = sizeof(name.GetData()) / sizeof(name.GetData()[0]);
-        auto value = name.GetData();
+        auto size = name.GetSize();
+        auto value = reinterpret_cast<const uint8_t*>(name.GetData());
 
-        encryption_state->Process(reinterpret_cast<const_data_ptr_t>(value), size, buffer, size);
+        encryption_state->Process(value, size, buffer, size);
+
         D_ASSERT(MAX_BUFFER_SIZE == sizeof(encryption_buffer) / sizeof(encryption_buffer[0]));
 
-        string_t str(reinterpret_cast<const char*>(buffer), size);
+        string_t encrypted_data = reinterpret_cast<const char*>(buffer);
+        auto printable_encrypted_data = Blob::ToString(encrypted_data);
 
-        // convert data to blob
-        auto encrypted_data = Blob::ToString(str);
+#ifdef DEBUG
+// cast encrypted data to blob back and forth to check whether data will be lost
+        auto unblobbed_data = Blob::ToBlob(printable_encrypted_data);
+        auto encrypted_unblobbed_data = reinterpret_cast<const uint8_t*>(unblobbed_data.data());
 
-        // this works!
-        // auto unblobbed_data = Blob::ToBlob(encrypted_data);
+        if (memcmp(encrypted_unblobbed_data, buffer, size) != 0){
+          throw InvalidInputException("Original Encrypted Data differs from Unblobbed Encrypted Data");
+        }
 
-        return StringVector::AddString(result, "Test function " + encrypted_data);
-        //return StringVector::AddString(result, "Test function " + encrypted_value.GetString() + " 🐥");
-        // create a test now to properly debug :D
+        auto decrypted_data = DecryptValue(buffer, size);
+        if (memcmp(decrypted_data, value, size) != 0){
+          throw InvalidInputException("Original Data differs from Decrypted Data");
+        }
+#endif
+
+        return StringVector::AddString(result, "Test function " + printable_encrypted_data);
+
       });
 }
 
@@ -124,7 +169,16 @@ inline void EncryptColumn(DataChunk &args, ExpressionState &state, Vector &resul
 
 static void LoadInternal(DatabaseInstance &instance) {
 
+//    auto &config = DBConfig::GetConfig(instance);
+
+//    for (auto &connection : ConnectionManager::Get(instance).GetConnectionList()) {
+//      connection->registered_state->Insert(
+//          "simple_encryption",
+//          make_shared_ptr<SimpleEncryptionState>(connection));
+//    }
+
     // Register a scalar function
+    // move this to somewhere else
     auto simple_encryption_scalar_function = ScalarFunction("simple_encryption", {LogicalType::VARCHAR}, LogicalType::VARCHAR, SimpleEncryptionScalarFun);
     ExtensionUtil::RegisterFunction(instance, simple_encryption_scalar_function);
 
@@ -134,6 +188,7 @@ static void LoadInternal(DatabaseInstance &instance) {
     ExtensionUtil::RegisterFunction(instance, simple_encryption_openssl_version_scalar_function);
 
     // Register a scalar function
+
     auto encrypt_value = ScalarFunction("encrypt", {LogicalType::VARCHAR}, LogicalType::VARCHAR, EncryptValue);
     ExtensionUtil::RegisterFunction(instance, encrypt_value);
 }
@@ -149,7 +204,7 @@ std::string SimpleEncryptionExtension::Version() const {
 #ifdef EXT_VERSION_SIMPLE_ENCRYPTION
 	return EXT_VERSION_SIMPLE_ENCRYPTION;
 #else
-	return "";
+	return "V0.0.1";
 #endif
 }
 
@@ -157,14 +212,14 @@ std::string SimpleEncryptionExtension::Version() const {
 
 extern "C" {
 
-DUCKDB_EXTENSION_API void simple_encryption_init(duckdb::DatabaseInstance &db) {
-    duckdb::DuckDB db_wrapper(db);
-    db_wrapper.LoadExtension<duckdb::SimpleEncryptionExtension>();
-}
+  DUCKDB_EXTENSION_API void simple_encryption_init(duckdb::DatabaseInstance &db) {
+      duckdb::DuckDB db_wrapper(db);
+      db_wrapper.LoadExtension<duckdb::SimpleEncryptionExtension>();
+  }
 
-DUCKDB_EXTENSION_API const char *simple_encryption_version() {
-	return duckdb::DuckDB::LibraryVersion();
-}
+  DUCKDB_EXTENSION_API const char *simple_encryption_version() {
+          return duckdb::DuckDB::LibraryVersion();
+  }
 }
 
 #ifndef DUCKDB_EXTENSION_MAIN
