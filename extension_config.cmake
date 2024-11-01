@@ -6,5 +6,8 @@ duckdb_extension_load(simple_encryption
         SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}
 )
 
+# Load httpfs extension
+duckdb_extension_load(httpfs)
+
 # Any extra extensions that should be built
 # e.g.: duckdb_extension_load(json)

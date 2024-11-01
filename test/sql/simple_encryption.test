@@ -13,11 +13,17 @@ require simple_encryption
 
 # Confirm the extension works
 query I
-SELECT simple_encryption('Sam');
+SELECT encrypt('testtesttesttesttest');
 ----
-SimpleEncryption Sam 🐥
+Test function \xADw\xAA\xF4\x16$\x07)
 
-query I
-SELECT simple_encryption_openssl_version('Michael') ILIKE 'SimpleEncryption Michael, my linked OpenSSL version is OpenSSL%';
-----
-true
+## Confirm the extension works
+#query I
+#SELECT simple_encryption('Sam');
+#----
+#SimpleEncryption Sam 🐥
+#
+#query I
+#SELECT simple_encryption_openssl_version('Michael') ILIKE 'SimpleEncryption Michael, my linked OpenSSL version is OpenSSL%';
+#----
+#true
