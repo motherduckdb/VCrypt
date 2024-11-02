@@ -4,7 +4,7 @@
 
 # Before we load the extension, this will fail
 statement error
-SELECT simple_encryption('Sam');
+SELECT simple_encryption('Test');
 ----
 Catalog Error: Scalar Function with name simple_encryption does not exist!
 
@@ -15,14 +15,14 @@ require simple_encryption
 query I
 SELECT encrypt('testtesttesttesttest');
 ----
-Test function \xADw\xAA\xF4\x16$\x07)\xD3\xDD.8-\xD8\xC1 :z\xA0rp
+testtesttesttesttest is encrypted as: \xADw\xAA\xF4\x16$\x07)\xD3\xDD.8-\xD8\xC1 :z\xA0rp
 
 
 # Confirm the extension works
 query I
 SELECT encrypt('Andere random data');
 ----
-Test function \x98|\xBD\xE5\x10$T/\xC6\xD69#4\x9D\xD65:~\x02
+Andere random data is encrypted as: \x98|\xBD\xE5\x10$T/\xC6\xD69#4\x9D\xD65:~\x02
 
 ## Confirm the extension works
 #query I

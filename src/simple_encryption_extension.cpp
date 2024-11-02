@@ -135,7 +135,7 @@ inline void EncryptValue(DataChunk &args, ExpressionState &state, Vector &result
         auto printable_encrypted_data = Blob::ToString(encrypted_data);
 
 #ifdef DEBUG
-// cast encrypted data to blob back and forth to check whether data will be lost
+        // cast encrypted data to blob back and forth to check whether data will be lost
         auto unblobbed_data = Blob::ToBlob(printable_encrypted_data);
         auto encrypted_unblobbed_data = reinterpret_cast<const uint8_t*>(unblobbed_data.data());
 
@@ -149,16 +149,16 @@ inline void EncryptValue(DataChunk &args, ExpressionState &state, Vector &result
         }
 #endif
 
-        return StringVector::AddString(result, "Test function " + printable_encrypted_data);
+        return StringVector::AddString(result, name.GetString() + " is encrypted as: " + printable_encrypted_data);
 
       });
 }
 
 inline void EncryptColumn(DataChunk &args, ExpressionState &state, Vector &result) {
 
+
   // Make as input a column name
   // For now, hardcode the nonce
-
   auto &name_vector = args.data[0];
   UnaryExecutor::Execute<string_t, string_t>(
       name_vector, result, args.size(),
@@ -169,7 +169,7 @@ inline void EncryptColumn(DataChunk &args, ExpressionState &state, Vector &resul
 
 static void LoadInternal(DatabaseInstance &instance) {
 
-//    auto &config = DBConfig::GetConfig(instance);
+    auto &config = DBConfig::GetConfig(instance);
 
 //    for (auto &connection : ConnectionManager::Get(instance).GetConnectionList()) {
 //      connection->registered_state->Insert(
@@ -185,11 +185,15 @@ static void LoadInternal(DatabaseInstance &instance) {
     // Register another scalar function
     auto simple_encryption_openssl_version_scalar_function = ScalarFunction("simple_encryption_openssl_version", {LogicalType::VARCHAR},
                                                 LogicalType::VARCHAR, SimpleEncryptionOpenSSLVersionScalarFun);
+
     ExtensionUtil::RegisterFunction(instance, simple_encryption_openssl_version_scalar_function);
 
     // Register a scalar function
 
+    // what if scalar functions can have multiple types?
     auto encrypt_value = ScalarFunction("encrypt", {LogicalType::VARCHAR}, LogicalType::VARCHAR, EncryptValue);
+    // also todo: er wordt niks geprint
+
     ExtensionUtil::RegisterFunction(instance, encrypt_value);
 }
 

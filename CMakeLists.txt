@@ -16,7 +16,13 @@ project(${TARGET_NAME})
 include_directories(src/include)
 add_subdirectory(src)
 
-set(EXTENSION_SOURCES src/simple_encryption_extension.cpp)
+# by now do this manually
+set(EXTENSION_SOURCES src/simple_encryption_extension.cpp
+        src/simple_encryption_extension.cpp
+        src/simple_encryption_state.cpp
+        src/core/module.cpp
+        src/core/functions/scalar/encrypt.cpp
+)
 
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
 build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})

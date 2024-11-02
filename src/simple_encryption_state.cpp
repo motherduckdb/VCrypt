@@ -25,7 +25,7 @@ SimpleEncryptionState::SimpleEncryptionState(shared_ptr<ClientContext> context) 
   auto new_conn = make_shared_ptr<ClientContext>(context->db);
 
   // Create a new table containing encryption metadata (nonce, tag)
-  auto query = new_conn->Query("CREATE TABLE IF NOT EXISTS __simpleencryption_internal ("
+  auto query = new_conn->Query("CREATE TABLE IF NOT EXISTS __simple_encryption_internal ("
                                "nonce varchar, "
                                "tag varchar, ",
                                false);

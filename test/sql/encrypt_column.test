@@ -1,0 +1,40 @@
+# name: test/sql/encrypt_column.test
+# description: test simple_encryption extension
+# group: [simple_encryption]
+
+# Require statement will ensure this test is run with this extension loaded
+require simple_encryption
+
+# Create plaintext table
+statement ok
+CREATE TABLE plaintext AS
+  SELECT
+      row_number() OVER () AS nonce,
+      row_number() OVER () + 10 AS value
+  FROM
+      range(10);
+
+statement ok
+CREATE TABLE ciphertext AS SELECT * FROM plaintext;
+
+statement ok
+ALTER TABLE ciphertext ADD COLUMN encrypted_text VARCHAR;
+
+statement ok
+SELECT CAST(value AS VARCHAR) AS encrypted_text FROM ciphertext;
+
+statement ok
+UPDATE ciphertext SET encrypted_text = encrypt(value);
+
+# Confirm the extension works
+query I
+SELECT encrypt('testtesttesttesttest');
+----
+Test function \xADw\xAA\xF4\x16$\x07)\xD3\xDD.8-\xD8\xC1 :z\xA0rp
+
+
+# Confirm the extension works
+query I
+SELECT encrypt('Andere random data');
+----
+Test function \x98|\xBD\xE5\x10$T/\xC6\xD69#4\x9D\xD65:~\x02
