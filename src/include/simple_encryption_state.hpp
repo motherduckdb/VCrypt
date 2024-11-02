@@ -9,8 +9,10 @@ class SimpleEncryptionState : public ClientContextState {
 
 public:
   explicit SimpleEncryptionState(shared_ptr<ClientContext> context);
+  void QueryEnd() override;
 
 public:
+  shared_ptr<ClientContext> context_p;
   shared_ptr<EncryptionState> encryption_state;
 };
 
