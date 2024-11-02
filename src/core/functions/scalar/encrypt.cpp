@@ -3,8 +3,6 @@
 #define TEST_KEY "0123456789112345"
 #define MAX_BUFFER_SIZE 1024
 
-#include "simple_encryption_extension.hpp"
-#include "simple_encryption_state.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/types.hpp"
@@ -134,7 +132,7 @@ ScalarFunctionSet GetEncryptionFunction() {
   ScalarFunctionSet set("encrypt");
   // support all available types for encryption
   for (auto &type : LogicalType::AllTypes()) {
-    set.AddFunction(ScalarFunction({type}, LogicalType::BLOB, EncryptData));
+    set.AddFunction(ScalarFunction({type}, LogicalType::VARCHAR, EncryptData));
   }
 
   return set;
@@ -146,27 +144,7 @@ ScalarFunctionSet GetEncryptionFunction() {
 
 void CoreScalarFunctions::RegisterEncryptDataScalarFunction(
     DatabaseInstance &db) {
-  ExtensionUtil::RegisterFunction(
-      db,
-      ScalarFunction("encrypt",
-                     {LogicalType::VARCHAR},
-                     LogicalType::VARCHAR, EncryptData));
+  ExtensionUtil::RegisterFunction(db, GetEncryptionFunction());
 }
-
-//------------------------------------------------------------------------------
-// Register functions
-//------------------------------------------------------------------------------
-// set function
-//void CoreScalarFunctions::RegisterEncryptDataScalarFunction(DatabaseInstance &db) {
-////  auto encrypt_value = ScalarFunction("encrypt", {LogicalType::VARCHAR}, LogicalType::VARCHAR, EncryptValue);
-////  ExtensionUtil::RegisterFunction(instance, encrypt_value);
-//  ExtensionUtil::RegisterFunction(db, GetEncryptionFunction());
-////  ExtensionUtil::RegisterFunction(db, EncryptData());
-//}
-
-
-// TODO: see if it works like this
-// And different types
-
 }
 }
