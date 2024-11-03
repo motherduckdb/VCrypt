@@ -22,6 +22,8 @@ set(EXTENSION_SOURCES src/simple_encryption_extension.cpp
         src/simple_encryption_state.cpp
         src/core/module.cpp
         src/core/functions/scalar/encrypt.cpp
+        src/core/functions/scalar/decrypt.cpp
+        src/core/utils/simple_encryption_utils.cpp
 )
 
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})

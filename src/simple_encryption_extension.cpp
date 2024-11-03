@@ -26,6 +26,10 @@ static void LoadInternal(DatabaseInstance &instance) {
     simple_encryption::core::CoreModule::Register(instance);
 
     // Register the SimpleEncryptionState for all connections
+    auto &config = DBConfig::GetConfig(instance);
+    config.extension_callbacks.push_back(make_uniq<SimpleEncryptionExtensionCallback>());
+
+    // Register the SimpleEncryptionState for all connections
     for (auto &connection : ConnectionManager::Get(instance).GetConnectionList()) {
       connection->registered_state->Insert(
           "simple_encryption",

@@ -24,13 +24,13 @@ namespace core {
 
 shared_ptr<EncryptionState> InitializeCryptoState() {
 
-//  auto &info = (CSRFunctionData &)*func_expr.bind_info;
-//  auto simple_encryption_state = info.context.registered_state->Get<SimpleEncryptionState>("simple_encryption");
-//
-//  if (!simple_encryption_state) {
-//    throw MissingExtensionException(
-//        "The simple_encryption extension has not been loaded");
-//  }
+  //  auto &info = (CSRFunctionData &)*func_expr.bind_info;
+  //  auto simple_encryption_state = info.context.registered_state->Get<SimpleEncryptionState>("simple_encryption");
+  //
+  //  if (!simple_encryption_state) {
+  //    throw MissingExtensionException(
+  //        "The simple_encryption extension has not been loaded");
+  //  }
 
   // for now just harcode MBEDTLS here
   shared_ptr<EncryptionState> encryption_state =
@@ -81,7 +81,7 @@ shared_ptr<EncryptionState> InitializeDecryption() {
 
 inline const uint8_t *DecryptValue(uint8_t *buffer, size_t size) {
 
-  // Initialize Encryption
+  // Initialize Decryption
   auto encryption_state = InitializeDecryption();
   uint8_t decryption_buffer[MAX_BUFFER_SIZE];
   uint8_t *temp_buf = decryption_buffer;
@@ -92,7 +92,7 @@ inline const uint8_t *DecryptValue(uint8_t *buffer, size_t size) {
 }
 
 bool CheckEncryption(string_t printable_encrypted_data, uint8_t *buffer,
-                            size_t size, const uint8_t *value){
+                     size_t size, const uint8_t *value){
 
   // cast encrypted data to blob back and forth
   // to check whether data will be lost with casting
@@ -114,25 +114,29 @@ bool CheckEncryption(string_t printable_encrypted_data, uint8_t *buffer,
   return true;
 }
 
-static void EncryptData(DataChunk &args, ExpressionState &state,
+static void DecryptData(DataChunk &args, ExpressionState &state,
                         Vector &result) {
 
-  auto encryption_state = InitializeEncryption();
+  auto encryption_state = InitializeDecryption();
 
-  uint8_t encryption_buffer[MAX_BUFFER_SIZE];
-  uint8_t *buffer = encryption_buffer;
+  uint8_t decryption_buffer[MAX_BUFFER_SIZE];
+  uint8_t *buffer = decryption_buffer;
 
   auto &name_vector = args.data[0];
 
   UnaryExecutor::Execute<string_t, string_t>(
       name_vector, result, args.size(), [&](string_t name) {
+        // probably the inputtype is a string
+        auto blob_val = Blob::ToBlob(name);
         auto size = name.GetSize();
+
+        // can a blob always be casted to uint8_t without losing data?
         auto value = reinterpret_cast<const uint8_t *>(name.GetData());
 
         encryption_state->Process(value, size, buffer, size);
 
         D_ASSERT(MAX_BUFFER_SIZE ==
-                 sizeof(encryption_buffer) / sizeof(encryption_buffer[0]));
+                 sizeof(decryption_buffer) / sizeof(decryption_buffer[0]));
 
         string_t encrypted_data = reinterpret_cast<const char *>(buffer);
         auto printable_encrypted_data = Blob::ToString(encrypted_data);
@@ -145,12 +149,14 @@ static void EncryptData(DataChunk &args, ExpressionState &state,
       });
 }
 
-ScalarFunctionSet GetEncryptionFunction() {
-  ScalarFunctionSet set("encrypt");
 
-  // support all available types for encryption
+ScalarFunctionSet GetDecryptionFunction() {
+  ScalarFunctionSet set("decrypt");
+  // For now, we can only decrypt data of type BLOB (max 16 bytes?)
+  // But the output, in theory, can be of any type
+  // TODO: how to deal with that?
   for (auto &type : LogicalType::AllTypes()) {
-    set.AddFunction(ScalarFunction({type}, LogicalType::VARCHAR, EncryptData));
+    set.AddFunction(ScalarFunction({LogicalType::BLOB}, type, DecryptData));
   }
   return set;
 }
@@ -161,7 +167,7 @@ ScalarFunctionSet GetEncryptionFunction() {
 
 void CoreScalarFunctions::RegisterEncryptDataScalarFunction(
     DatabaseInstance &db) {
-  ExtensionUtil::RegisterFunction(db, GetEncryptionFunction());
+  ExtensionUtil::RegisterFunction(db, GetDecryptionFunction());
 }
 }
 }
