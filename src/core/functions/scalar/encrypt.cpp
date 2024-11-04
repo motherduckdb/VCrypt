@@ -17,6 +17,8 @@
 #include "simple_encryption/core/functions/scalar.hpp"
 #include "simple_encryption_state.hpp"
 #include "duckdb/main/client_context.hpp"
+#include "simple_encryption/core/functions/function_data/encrypt_function_data.hpp"
+#include "duckdb/planner/expression/bound_function_expression.hpp"
 
 namespace simple_encryption {
 
@@ -43,7 +45,6 @@ shared_ptr<EncryptionState> InitializeEncryption() {
 
   // For now, hardcode everything
   const string key = TEST_KEY;
-  unsigned char tag[16];
   unsigned char iv[16];
   memcpy((void *)iv, "12345678901", 12);
 
@@ -63,7 +64,6 @@ shared_ptr<EncryptionState> InitializeDecryption() {
 
   // For now, hardcode everything
   const string key = TEST_KEY;
-  unsigned char tag[16];
   unsigned char iv[16];
   memcpy((void *)iv, "12345678901", 12);
   //
@@ -114,44 +114,72 @@ bool CheckEncryption(string_t printable_encrypted_data, uint8_t *buffer,
   return true;
 }
 
+shared_ptr<EncryptionUtil> GetEncryptionUtil(ExpressionState &state) {
+  auto &func_expr = (BoundFunctionExpression &)state.expr;
+  auto &info = (EncryptFunctionData &)*func_expr.bind_info;
+  // get Database config
+  auto &config = DBConfig::GetConfig(*info.context.db);
+  return config.encryption_util;
+}
+
 static void EncryptData(DataChunk &args, ExpressionState &state,
                         Vector &result) {
 
-  auto encryption_state = InitializeEncryption();
-
-  uint8_t encryption_buffer[MAX_BUFFER_SIZE];
-  uint8_t *buffer = encryption_buffer;
+//  auto &func_expr = (BoundFunctionExpression &)state.expr;
+//  // bind_info ptr is null
+//  auto &info = (EncryptFunctionData &)*func_expr.bind_info;
+//  // get Database config
+//  auto &config = DBConfig::GetConfig(*info.context.db);
+//  auto encryption_util = config.encryption_util;
 
   auto &name_vector = args.data[0];
 
+  // actually, fix to get encryption_state from db config
+  auto encryption_state = InitializeEncryption();
+
+  // TODO; handle all different input types
   UnaryExecutor::Execute<string_t, string_t>(
       name_vector, result, args.size(), [&](string_t name) {
-        auto size = name.GetSize();
-        auto value = reinterpret_cast<const uint8_t *>(name.GetData());
 
-        encryption_state->Process(value, size, buffer, size);
+        // we do this here, we actually need to keep track of a pointer all the time
+        uint8_t encryption_buffer[MAX_BUFFER_SIZE];
+        uint8_t *buffer = encryption_buffer;
+
+        auto size = name.GetSize();
+        //std::fill(encryption_buffer, encryption_buffer + size, 0);
+        // round the size to multiple of 16 for encryption efficiency
+//        size = (size + 15) & ~15;
+
+        encryption_state->Process(
+            reinterpret_cast<const_data_ptr_t>(name.GetData()), size, buffer, size);
 
         D_ASSERT(MAX_BUFFER_SIZE ==
                  sizeof(encryption_buffer) / sizeof(encryption_buffer[0]));
 
-        string_t encrypted_data = reinterpret_cast<const char *>(buffer);
+        string_t encrypted_data(reinterpret_cast<const char *>(buffer), size);
         auto printable_encrypted_data = Blob::ToString(encrypted_data);
 
-        D_ASSERT(CheckEncryption(printable_encrypted_data, buffer, size, value) == 1);
+        D_ASSERT(CheckEncryption(printable_encrypted_data, buffer, size, reinterpret_cast<const_data_ptr_t>(name.GetData())) == 1);
 
-        return StringVector::AddString(
-            result,
-            name.GetString() + " is encrypted as: " + printable_encrypted_data);
+        // attach the tag at the end of the encrypted data
+        unsigned char tag[16];
+        encryption_state->Finalize(buffer, 0, tag, 16);
+
+        // buffer pointer stays at the start haha
+//         buffer -= size;
+
+        return printable_encrypted_data;
       });
 }
 
 ScalarFunctionSet GetEncryptionFunction() {
   ScalarFunctionSet set("encrypt");
 
-  // support all available types for encryption
+  // TODO; support all available types for encryption
   for (auto &type : LogicalType::AllTypes()) {
     set.AddFunction(ScalarFunction({type}, LogicalType::VARCHAR, EncryptData));
   }
+
   return set;
 }
 

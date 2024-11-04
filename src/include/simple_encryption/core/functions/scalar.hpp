@@ -13,6 +13,7 @@ struct CoreScalarFunctions {
 
 private:
   static void RegisterEncryptDataScalarFunction(duckdb::DatabaseInstance &db);
+  static void RegisterDecryptDataScalarFunction(duckdb::DatabaseInstance &db);
 };
 
 

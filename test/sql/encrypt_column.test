@@ -5,36 +5,28 @@
 # Require statement will ensure this test is run with this extension loaded
 require simple_encryption
 
-# Create plaintext table
 statement ok
-CREATE TABLE plaintext AS
+CREATE TABLE test_encryption_1 AS SELECT 1 AS value FROM range(10);
+
+statement ok
+ALTER TABLE test_encryption_1 ADD COLUMN encrypted_value VARCHAR;
+
+statement ok
+UPDATE test_encryption_1 SET encrypted_value = encrypt(value);
+
+statement ok
+CREATE TABLE rd_data AS
   SELECT
-      row_number() OVER () AS nonce,
-      row_number() OVER () + 10 AS value
+      SUBSTRING(MD5(RANDOM()::TEXT), 1, 5) AS rd_values
   FROM
       range(10);
 
 statement ok
-CREATE TABLE ciphertext AS SELECT * FROM plaintext;
+SELECT encrypt(rd_values) AS encrypted_value FROM rd_data;
+
+# Create plaintext table
+statement ok
+CREATE TABLE test_encryption_2 AS SELECT * FROM range(1, 11) AS value;
 
 statement ok
-ALTER TABLE ciphertext ADD COLUMN encrypted_text VARCHAR;
-
-statement ok
-SELECT CAST(value AS VARCHAR) AS encrypted_text FROM ciphertext;
-
-statement ok
-UPDATE ciphertext SET encrypted_text = encrypt(value);
-
-# Confirm the extension works
-query I
-SELECT encrypt('testtesttesttesttest');
-----
-Test function \xADw\xAA\xF4\x16$\x07)\xD3\xDD.8-\xD8\xC1 :z\xA0rp
-
-
-# Confirm the extension works
-query I
-SELECT encrypt('Andere random data');
-----
-Test function \x98|\xBD\xE5\x10$T/\xC6\xD69#4\x9D\xD65:~\x02
+SELECT encrypt(value) AS encrypted_value FROM test_encryption_2;
