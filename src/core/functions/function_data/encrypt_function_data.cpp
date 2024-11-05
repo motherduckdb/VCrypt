@@ -14,7 +14,7 @@ unique_ptr<FunctionData> EncryptFunctionData::Copy() const {
 bool EncryptFunctionData::Equals(const FunctionData &other_p) const {
   auto &other = (const EncryptFunctionData &)other_p;
   // fix this to return the right id
-  return false;
+  return true;
 }
 
 unique_ptr<FunctionData> EncryptFunctionData::EncryptBind(ClientContext &context, ScalarFunction &bound_function,

@@ -24,65 +24,69 @@ namespace simple_encryption {
 
 namespace core {
 
-shared_ptr<EncryptionState> InitializeCryptoState() {
-
-//  auto &info = (CSRFunctionData &)*func_expr.bind_info;
-//  auto simple_encryption_state = info.context.registered_state->Get<SimpleEncryptionState>("simple_encryption");
-//
-//  if (!simple_encryption_state) {
-//    throw MissingExtensionException(
-//        "The simple_encryption extension has not been loaded");
-//  }
-
-  // for now just harcode MBEDTLS here
-  shared_ptr<EncryptionState> encryption_state =
-      duckdb_mbedtls::MbedTlsWrapper::AESGCMStateMBEDTLSFactory()
-          .CreateEncryptionState();
-  return encryption_state;
+shared_ptr<EncryptionUtil> GetEncryptionUtil(ExpressionState &state) {
+  auto &func_expr = (BoundFunctionExpression &)state.expr;
+  auto &info = (EncryptFunctionData &)*func_expr.bind_info;
+  // get Database config
+  auto &config = DBConfig::GetConfig(*info.context.db);
+  return config.encryption_util;
 }
 
-shared_ptr<EncryptionState> InitializeEncryption() {
+shared_ptr<EncryptionState> InitializeCryptoState(ExpressionState &state) {
+  auto encryption_state = GetEncryptionUtil(state);
+
+  if (!encryption_state) {
+    return duckdb_mbedtls::MbedTlsWrapper::AESGCMStateMBEDTLSFactory()
+                   .CreateEncryptionState();
+  }
+
+  return encryption_state->CreateEncryptionState();
+}
+
+shared_ptr<EncryptionState> InitializeEncryption(ExpressionState &state) {
 
   // For now, hardcode everything
+  // for some reason, this is 12
   const string key = TEST_KEY;
-  unsigned char iv[16];
+  unsigned char iv[12];
   memcpy((void *)iv, "12345678901", 12);
+//
+//  // TODO; construct nonce based on immutable ROW_ID + hash(col_name)
+//  iv[12] = 0x00;
+//  iv[13] = 0x00;
+//  iv[14] = 0x00;
+//  iv[15] = 0x00;
 
-  // TODO; construct nonce based on immutable ROW_ID + hash(col_name)
-  iv[12] = 0x00;
-  iv[13] = 0x00;
-  iv[14] = 0x00;
-  iv[15] = 0x00;
-
-  auto encryption_state = InitializeCryptoState();
-  encryption_state->InitializeEncryption(iv, 16, &key);
+  auto encryption_state = InitializeCryptoState(state);
+//  encryption_state->GenerateRandomData(iv, 12);
+  encryption_state->InitializeEncryption(iv, 12, &key);
 
   return encryption_state;
 }
 
-shared_ptr<EncryptionState> InitializeDecryption() {
+shared_ptr<EncryptionState> InitializeDecryption(ExpressionState &state) {
 
   // For now, hardcode everything
   const string key = TEST_KEY;
-  unsigned char iv[16];
+  unsigned char iv[12];
   memcpy((void *)iv, "12345678901", 12);
   //
   //  // TODO; construct nonce based on immutable ROW_ID + hash(col_name)
-  iv[12] = 0x00;
-  iv[13] = 0x00;
-  iv[14] = 0x00;
-  iv[15] = 0x00;
+//  iv[12] = 0x00;
+//  iv[13] = 0x00;
+//  iv[14] = 0x00;
+//  iv[15] = 0x00;
 
-  auto decryption_state = InitializeCryptoState();
+  auto decryption_state = InitializeCryptoState(state);
   decryption_state->InitializeDecryption(iv, 16, &key);
 
   return decryption_state;
 }
 
-inline const uint8_t *DecryptValue(uint8_t *buffer, size_t size) {
+inline const uint8_t *DecryptValue(uint8_t *buffer, size_t size, ExpressionState &state) {
 
   // Initialize Encryption
-  auto encryption_state = InitializeDecryption();
+  auto encryption_state = InitializeDecryption(state);
   uint8_t decryption_buffer[MAX_BUFFER_SIZE];
   uint8_t *temp_buf = decryption_buffer;
 
@@ -92,7 +96,7 @@ inline const uint8_t *DecryptValue(uint8_t *buffer, size_t size) {
 }
 
 bool CheckEncryption(string_t printable_encrypted_data, uint8_t *buffer,
-                            size_t size, const uint8_t *value){
+                            size_t size, const uint8_t *value, ExpressionState &state){
 
   // cast encrypted data to blob back and forth
   // to check whether data will be lost with casting
@@ -105,7 +109,7 @@ bool CheckEncryption(string_t printable_encrypted_data, uint8_t *buffer,
         "Original Encrypted Data differs from Unblobbed Encrypted Data");
   }
 
-  auto decrypted_data = DecryptValue(buffer, size);
+  auto decrypted_data = DecryptValue(buffer, size, state);
   if (memcmp(decrypted_data, value, size) != 0) {
     throw InvalidInputException(
         "Original Data differs from Decrypted Data");
@@ -114,37 +118,23 @@ bool CheckEncryption(string_t printable_encrypted_data, uint8_t *buffer,
   return true;
 }
 
-shared_ptr<EncryptionUtil> GetEncryptionUtil(ExpressionState &state) {
-  auto &func_expr = (BoundFunctionExpression &)state.expr;
-  auto &info = (EncryptFunctionData &)*func_expr.bind_info;
-  // get Database config
-  auto &config = DBConfig::GetConfig(*info.context.db);
-  return config.encryption_util;
-}
-
 static void EncryptData(DataChunk &args, ExpressionState &state,
                         Vector &result) {
 
-//  auto &func_expr = (BoundFunctionExpression &)state.expr;
-//  // bind_info ptr is null
-//  auto &info = (EncryptFunctionData &)*func_expr.bind_info;
-//  // get Database config
-//  auto &config = DBConfig::GetConfig(*info.context.db);
-//  auto encryption_util = config.encryption_util;
-
   auto &name_vector = args.data[0];
+//  auto encryption_state = InitializeEncryption(state);
 
-  // actually, fix to get encryption_state from db config
-  auto encryption_state = InitializeEncryption();
+  // we do this here, we actually need to keep track of a pointer all the time
+  uint8_t encryption_buffer[MAX_BUFFER_SIZE];
+  uint8_t *buffer = encryption_buffer;
 
   // TODO; handle all different input types
   UnaryExecutor::Execute<string_t, string_t>(
       name_vector, result, args.size(), [&](string_t name) {
 
-        // we do this here, we actually need to keep track of a pointer all the time
-        uint8_t encryption_buffer[MAX_BUFFER_SIZE];
-        uint8_t *buffer = encryption_buffer;
-
+        // For now; new encryption state for every new value
+        // does this has to do with multithreading or something?
+        auto encryption_state = InitializeEncryption(state);
         auto size = name.GetSize();
         //std::fill(encryption_buffer, encryption_buffer + size, 0);
         // round the size to multiple of 16 for encryption efficiency
@@ -159,11 +149,11 @@ static void EncryptData(DataChunk &args, ExpressionState &state,
         string_t encrypted_data(reinterpret_cast<const char *>(buffer), size);
         auto printable_encrypted_data = Blob::ToString(encrypted_data);
 
-        D_ASSERT(CheckEncryption(printable_encrypted_data, buffer, size, reinterpret_cast<const_data_ptr_t>(name.GetData())) == 1);
+        D_ASSERT(CheckEncryption(printable_encrypted_data, buffer, size, reinterpret_cast<const_data_ptr_t>(name.GetData()), state) == 1);
 
         // attach the tag at the end of the encrypted data
-        unsigned char tag[16];
-        encryption_state->Finalize(buffer, 0, tag, 16);
+//        unsigned char tag[16];
+//        encryption_state->Finalize(buffer, 0, tag, 16);
 
         // buffer pointer stays at the start haha
 //         buffer -= size;
@@ -177,7 +167,8 @@ ScalarFunctionSet GetEncryptionFunction() {
 
   // TODO; support all available types for encryption
   for (auto &type : LogicalType::AllTypes()) {
-    set.AddFunction(ScalarFunction({type}, LogicalType::VARCHAR, EncryptData));
+    set.AddFunction(ScalarFunction({type}, LogicalType::VARCHAR, EncryptData,
+                                  EncryptFunctionData::EncryptBind));
   }
 
   return set;

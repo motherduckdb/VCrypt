@@ -15,6 +15,7 @@ set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
 project(${TARGET_NAME})
 include_directories(src/include)
 add_subdirectory(src)
+include_directories(../duckdb/third_party/httplib/include)
 
 # by now do this manually
 set(EXTENSION_SOURCES src/simple_encryption_extension.cpp
@@ -26,6 +27,7 @@ set(EXTENSION_SOURCES src/simple_encryption_extension.cpp
         src/core/functions/function_data/encrypt_function_data.cpp
         src/core/functions/table/encrypt_table.cpp
         src/core/utils/simple_encryption_utils.cpp
+        src/core/crypto/crypto_primitives.cpp
 )
 
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})

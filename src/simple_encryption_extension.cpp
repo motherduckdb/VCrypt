@@ -17,6 +17,7 @@
 #include "duckdb/main/connection_manager.hpp"
 #include <simple_encryption_extension_callback.hpp>
 #include "simple_encryption/core/module.hpp"
+#include "simple_encryption/core/crypto/crypto_primitives.hpp"
 
 namespace duckdb {
 
@@ -27,6 +28,9 @@ static void LoadInternal(DatabaseInstance &instance) {
 
     // Register the SimpleEncryptionState for all connections
     auto &config = DBConfig::GetConfig(instance);
+
+    // set pointer to OpenSSL encryption state
+    config.encryption_util = make_shared_ptr<AESStateSSLFactory>();
     config.extension_callbacks.push_back(make_uniq<SimpleEncryptionExtensionCallback>());
 
     // Register the SimpleEncryptionState for all connections
