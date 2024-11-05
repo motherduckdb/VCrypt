@@ -44,11 +44,11 @@ public:
 
 private:
   bool ssl = true;
-  EVP_CIPHER_CTX *gcm_context;
+  EVP_CIPHER_CTX *context;
   Mode mode;
 
   // default value is GCM
-  Algorithm algorithm = GCM;
+  Algorithm algorithm = CTR;
 };
 
 } // namespace duckdb

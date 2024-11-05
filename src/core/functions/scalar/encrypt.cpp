@@ -2,6 +2,7 @@
 
 #define TEST_KEY "0123456789112345"
 #define MAX_BUFFER_SIZE 1024
+#define MAX_BUFFER_SIZE_2 8096
 
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
@@ -48,8 +49,8 @@ shared_ptr<EncryptionState> InitializeEncryption(ExpressionState &state) {
   // For now, hardcode everything
   // for some reason, this is 12
   const string key = TEST_KEY;
-  unsigned char iv[12];
-  memcpy((void *)iv, "12345678901", 12);
+  unsigned char iv[16];
+//  memcpy((void *)iv, "12345678901", 16);
 //
 //  // TODO; construct nonce based on immutable ROW_ID + hash(col_name)
 //  iv[12] = 0x00;
@@ -58,8 +59,8 @@ shared_ptr<EncryptionState> InitializeEncryption(ExpressionState &state) {
 //  iv[15] = 0x00;
 
   auto encryption_state = InitializeCryptoState(state);
-//  encryption_state->GenerateRandomData(iv, 12);
-  encryption_state->InitializeEncryption(iv, 12, &key);
+//  encryption_state->GenerateRandomData(iv, 16);
+  encryption_state->InitializeEncryption(iv, 16, &key);
 
   return encryption_state;
 }
@@ -68,8 +69,8 @@ shared_ptr<EncryptionState> InitializeDecryption(ExpressionState &state) {
 
   // For now, hardcode everything
   const string key = TEST_KEY;
-  unsigned char iv[12];
-  memcpy((void *)iv, "12345678901", 12);
+  unsigned char iv[16];
+  memcpy((void *)iv, "12345678901", 16);
   //
   //  // TODO; construct nonce based on immutable ROW_ID + hash(col_name)
 //  iv[12] = 0x00;
@@ -122,23 +123,31 @@ static void EncryptData(DataChunk &args, ExpressionState &state,
                         Vector &result) {
 
   auto &name_vector = args.data[0];
-//  auto encryption_state = InitializeEncryption(state);
+  auto encryption_state = InitializeEncryption(state);
 
   // we do this here, we actually need to keep track of a pointer all the time
-  uint8_t encryption_buffer[MAX_BUFFER_SIZE];
-  uint8_t *buffer = encryption_buffer;
+//  uint8_t encryption_buffer[MAX_BUFFER_SIZE];
+//  uint8_t *buffer = encryption_buffer;
 
   // TODO; handle all different input types
   UnaryExecutor::Execute<string_t, string_t>(
       name_vector, result, args.size(), [&](string_t name) {
 
+        // renew for each value
+        uint8_t encryption_buffer[MAX_BUFFER_SIZE];
+        uint8_t *buffer = encryption_buffer;
         // For now; new encryption state for every new value
         // does this has to do with multithreading or something?
-        auto encryption_state = InitializeEncryption(state);
         auto size = name.GetSize();
         //std::fill(encryption_buffer, encryption_buffer + size, 0);
         // round the size to multiple of 16 for encryption efficiency
 //        size = (size + 15) & ~15;
+
+        unsigned char iv[16];
+        const string key = TEST_KEY;
+
+        encryption_state->GenerateRandomData(iv, 16);
+        encryption_state->InitializeEncryption(iv, 16, &key);
 
         encryption_state->Process(
             reinterpret_cast<const_data_ptr_t>(name.GetData()), size, buffer, size);
@@ -147,6 +156,8 @@ static void EncryptData(DataChunk &args, ExpressionState &state,
                  sizeof(encryption_buffer) / sizeof(encryption_buffer[0]));
 
         string_t encrypted_data(reinterpret_cast<const char *>(buffer), size);
+
+
         auto printable_encrypted_data = Blob::ToString(encrypted_data);
 
         D_ASSERT(CheckEncryption(printable_encrypted_data, buffer, size, reinterpret_cast<const_data_ptr_t>(name.GetData()), state) == 1);
@@ -154,9 +165,6 @@ static void EncryptData(DataChunk &args, ExpressionState &state,
         // attach the tag at the end of the encrypted data
 //        unsigned char tag[16];
 //        encryption_state->Finalize(buffer, 0, tag, 16);
-
-        // buffer pointer stays at the start haha
-//         buffer -= size;
 
         return printable_encrypted_data;
       });
