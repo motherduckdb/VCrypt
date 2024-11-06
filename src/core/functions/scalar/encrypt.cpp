@@ -257,20 +257,19 @@ void ExecuteWithUnaryExecutor(Vector &vector, Vector &result, idx_t size, Expres
 
   unsigned char iv[16];
   auto encryption_state = InitializeCryptoState(state);
+
   // TODO; construct nonce based on immutable ROW_ID + hash(col_name)
   memcpy(iv, "12345678901", 12);
   iv[12] = iv[13] = iv[14] = iv[15] = 0x00;
 
   UnaryExecutor::Execute<T, T>(vector, result, size, [&](T input) -> T {
-    // maybe this is the same for every value? because based in LogicalType?
-    // or is it sizeof(T) / sizeof(input)
+
     auto data_size = GetSizeOfInput(input);
-    //        encryption_state->GenerateRandomData(iv, 16);
-    // also, put key in state of the extension
     encryption_state->InitializeEncryption(iv, 16, &key_t);
     // at some point, input gets invalid
 //    auto input_data = reinterpret_cast<const_data_ptr_t>(input);
 
+    // klopt dit wel?
     unsigned char byte_array[sizeof(T)];
     memcpy(byte_array, &input, sizeof(T));
 
@@ -279,6 +278,7 @@ void ExecuteWithUnaryExecutor(Vector &vector, Vector &result, idx_t size, Expres
 
     // Encrypt data
     encryption_state->Process(byte_array, data_size, buffer_p, data_size);
+
 //    T encrypted_data(reinterpret_cast<const char *>(buffer_p), data_size);
     T encrypted_data = EncryptAndConvert<T>(buffer_p, data_size, byte_array);
 
@@ -298,6 +298,8 @@ void ExecuteWithUnaryExecutor(Vector &vector, Vector &result, idx_t size, Expres
 // Helper function that dispatches the runtime type to the appropriate templated function
 void ExecuteWithRuntimeType(Vector &vector, Vector &result, idx_t size, ExpressionState &state, const string &key_t) {
   // Check the vector type and call the correct templated version
+
+  auto gettypeid = vector.GetType();
   switch (vector.GetType().id()) {
   case LogicalTypeId::INTEGER:
     ExecuteWithUnaryExecutor<int32_t>(vector, result, size, state, key_t);
@@ -331,24 +333,66 @@ static void EncryptData(DataChunk &args, ExpressionState &state, Vector &result)
 
 ScalarFunctionSet GetEncryptionFunction() {
   ScalarFunctionSet set("encrypt");
+
+  // input is column of any type, key is of type VARCHAR, output is of same type
+//  set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::VARCHAR}, LogicalTypeId::INTEGER, EncryptData,
+//                                 EncryptFunctionData::EncryptBind));
+//
+//  set.AddFunction(ScalarFunction({LogicalTypeId::BIGINT, LogicalType::VARCHAR}, LogicalTypeId::BIGINT, EncryptData,
+//                                 EncryptFunctionData::EncryptBind));
+//
+//  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::VARCHAR, EncryptData,
+//                                 EncryptFunctionData::EncryptBind));
+
+  set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::VARCHAR}, LogicalTypeId::INTEGER, EncryptData,
+                                 EncryptFunctionData::EncryptBind));
+
+  set.AddFunction(ScalarFunction({LogicalTypeId::BIGINT, LogicalType::VARCHAR}, LogicalTypeId::BIGINT, EncryptData,
+                                 EncryptFunctionData::EncryptBind));
+
+  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::BLOB, EncryptData,
+                                 EncryptFunctionData::EncryptBind));
+
   // TODO; support all available types for encryption
-  for (auto &type : LogicalType::AllTypes()) {
+//  for (auto &type : LogicalType::AllTypes()) {
+//
+//    // input is column of any type, key is of type VARCHAR, output is of same type
+//    set.AddFunction(ScalarFunction({type, LogicalType::VARCHAR}, type, EncryptData,
+//                                  EncryptFunctionData::EncryptBind));
+//
+//  }
 
-    // input is column of any type, key is of type VARCHAR, output is of same type
-    set.AddFunction(ScalarFunction({type, LogicalType::VARCHAR}, LogicalType::BLOB, EncryptData,
-                                  EncryptFunctionData::EncryptBind));
-
-  }
   return set;
 }
 
 ScalarFunctionSet GetDecryptionFunction() {
   ScalarFunctionSet set("decrypt");
+
+  // input is column of any type, key is of type VARCHAR, output is of same type
+  set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::VARCHAR}, LogicalTypeId::INTEGER, DecryptData,
+                                 EncryptFunctionData::EncryptBind));
+
+  set.AddFunction(ScalarFunction({LogicalTypeId::BIGINT, LogicalType::VARCHAR}, LogicalTypeId::BIGINT, DecryptData,
+                                 EncryptFunctionData::EncryptBind));
+
+  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::VARCHAR, DecryptData,
+                                 EncryptFunctionData::EncryptBind));
+
+  set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::VARCHAR}, LogicalTypeId::BLOB, DecryptData,
+                                 EncryptFunctionData::EncryptBind));
+
+  set.AddFunction(ScalarFunction({LogicalTypeId::BIGINT, LogicalType::VARCHAR}, LogicalTypeId::BLOB, DecryptData,
+                                 EncryptFunctionData::EncryptBind));
+
+  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::BLOB, DecryptData,
+                                 EncryptFunctionData::EncryptBind));
+
   // TODO; support all available types for encryption
-  for (auto &type : LogicalType::AllTypes()) {
-    set.AddFunction(ScalarFunction({type, LogicalType::VARCHAR}, LogicalType::BLOB, DecryptData,
-                                   EncryptFunctionData::EncryptBind));
-  }
+//  for (auto &type : LogicalType::AllTypes()) {
+//    set.AddFunction(ScalarFunction({type, LogicalType::VARCHAR}, type, DecryptData,
+//                                   EncryptFunctionData::EncryptBind));
+//  }
+
   return set;
 }
 

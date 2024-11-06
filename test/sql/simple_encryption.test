@@ -23,13 +23,7 @@ SELECT encrypt('test', '0123456789112345');
 ----
 \xFAN\xCEt
 
-## Confirm the extension works
-#query I
-#SELECT simple_encryption('Sam');
-#----
-#SimpleEncryption Sam 🐥
-#
-#query I
-#SELECT simple_encryption_openssl_version('Michael') ILIKE 'SimpleEncryption Michael, my linked OpenSSL version is OpenSSL%';
-#----
-#true
+query I
+SELECT encrypt(11, '0123456789112345');
+----
+1959677685
