@@ -13,13 +13,13 @@ require simple_encryption
 
 # Confirm the extension works
 query I
-SELECT encrypt('testtest');
+SELECT encrypt('testtest', '0123456789112345');
 ----
 \x8A+\xBD\x00\xE4]\xA6L
 
 
 query I
-SELECT encrypt('test');
+SELECT encrypt('test', '0123456789112345');
 ----
 \x8A+\xBD\x00
 

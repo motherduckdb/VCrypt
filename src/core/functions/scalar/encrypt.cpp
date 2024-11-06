@@ -216,8 +216,15 @@ static void EncryptData(DataChunk &args, ExpressionState &state,
                         Vector &result) {
 
   auto &name_vector = args.data[0];
-//  auto encryption_state = InitializeEncryption(state);
-  auto const size = sizeof(string_t);
+
+  // Get the encryption key
+  auto &key_vector = args.data[1];
+  D_ASSERT(key_vector.GetVectorType() == VectorType::CONSTANT_VECTOR);
+
+  // Fetch the encryption key as a constant string
+  const string key_t = ConstantVector::GetData<string_t>(key_vector)[0].GetString();
+
+  // how to check the data type of the vector?
 
   // TODO; handle all different input types
   UnaryExecutor::Execute<string_t, string_t>(
@@ -227,16 +234,13 @@ static void EncryptData(DataChunk &args, ExpressionState &state,
         // maybe put this in the state of the extension? But how about parallelism?
         uint8_t encryption_buffer[MAX_BUFFER_SIZE];
         uint8_t *buffer_p = encryption_buffer;
-        // For now; new encryption state for every new value
-        // does this has to do with multithreading or something?
-        // the size is suddenly 1, but we should just get the size of the input type...
         auto name_size = name.GetSize();
 
         // round the size to multiple of 16 for encryption efficiency
 //        size = (size + 15) & ~15;
 
         unsigned char iv[16];
-        const string key = TEST_KEY;
+        // const string key = TEST_KEY;
         auto encryption_state = InitializeCryptoState(state);
 
         // fix IV for now
@@ -249,7 +253,7 @@ static void EncryptData(DataChunk &args, ExpressionState &state,
         iv[15] = 0x00;
 
         //        encryption_state->GenerateRandomData(iv, 16);
-        encryption_state->InitializeEncryption(iv, 16, &key);
+        encryption_state->InitializeEncryption(iv, 16, &key_t);
 
         // at some point, input gets invalid
         auto input = reinterpret_cast<const_data_ptr_t>(name.GetData());
@@ -277,25 +281,21 @@ static void EncryptData(DataChunk &args, ExpressionState &state,
 
 ScalarFunctionSet GetEncryptionFunction() {
   ScalarFunctionSet set("encrypt");
-
   // TODO; support all available types for encryption
   for (auto &type : LogicalType::AllTypes()) {
-    set.AddFunction(ScalarFunction({type}, LogicalType::BLOB, EncryptData,
+    set.AddFunction(ScalarFunction({type, LogicalType::VARCHAR}, LogicalType::BLOB, EncryptData,
                                   EncryptFunctionData::EncryptBind));
   }
-
   return set;
 }
 
 ScalarFunctionSet GetDecryptionFunction() {
   ScalarFunctionSet set("decrypt");
-
   // TODO; support all available types for encryption
   for (auto &type : LogicalType::AllTypes()) {
-    set.AddFunction(ScalarFunction({type}, LogicalType::BLOB, DecryptData,
+    set.AddFunction(ScalarFunction({type, LogicalType::VARCHAR}, LogicalType::BLOB, DecryptData,
                                    EncryptFunctionData::EncryptBind));
   }
-
   return set;
 }
 
