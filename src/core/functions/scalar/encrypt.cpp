@@ -207,15 +207,116 @@ static void DecryptData(DataChunk &args, ExpressionState &state,
         unsigned char tag[16];
         // this does not do anything for CTR
         encryption_state->Finalize(buffer_p, 0, tag, 16);
-
         return printable_decrypted_data;
       });
 }
 
-static void EncryptData(DataChunk &args, ExpressionState &state,
-                        Vector &result) {
 
-  auto &name_vector = args.data[0];
+// FIX: make C++11 compatible
+// Generated code
+template <typename T>
+T EncryptAndConvert(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
+
+  if constexpr (std::is_integral<T>::value || std::is_floating_point<T>::value) {
+    T encrypted_data;
+    memcpy(&encrypted_data, buffer_p, sizeof(T));
+    return encrypted_data;
+
+  } else if constexpr (std::is_same<T, string_t>::value) {
+    return string_t(reinterpret_cast<const char *>(buffer_p), data_size);
+
+  } else {
+    InvalidInputException("Unsupported type for encryption");
+  }
+}
+
+template <typename T>
+size_t GetSizeOfInput(const T &input) {
+
+  size_t data_size;
+
+  if constexpr (std::is_same<T, string_t>::value) {
+    // For string_t, get actual string data size and pointer
+    data_size = input.GetSize();
+
+  } else {
+    // For numeric types, use sizeof(T) directly
+    data_size = sizeof(T);
+  }
+
+  return data_size;
+}
+
+
+template <typename T>
+void ExecuteWithUnaryExecutor(Vector &vector, Vector &result, idx_t size, ExpressionState &state, const string &key_t) {
+
+  // TODO: put this in the state of the extension
+  uint8_t encryption_buffer[MAX_BUFFER_SIZE];
+  uint8_t *buffer_p = encryption_buffer;
+
+  unsigned char iv[16];
+  auto encryption_state = InitializeCryptoState(state);
+  // TODO; construct nonce based on immutable ROW_ID + hash(col_name)
+  memcpy(iv, "12345678901", 12);
+  iv[12] = iv[13] = iv[14] = iv[15] = 0x00;
+
+  UnaryExecutor::Execute<T, T>(vector, result, size, [&](T input) -> T {
+    // maybe this is the same for every value? because based in LogicalType?
+    // or is it sizeof(T) / sizeof(input)
+    auto data_size = GetSizeOfInput(input);
+    //        encryption_state->GenerateRandomData(iv, 16);
+    // also, put key in state of the extension
+    encryption_state->InitializeEncryption(iv, 16, &key_t);
+    // at some point, input gets invalid
+//    auto input_data = reinterpret_cast<const_data_ptr_t>(input);
+
+    unsigned char byte_array[sizeof(T)];
+    memcpy(byte_array, &input, sizeof(T));
+
+    // Optionally make it `const unsigned char*`
+    const unsigned char* byte_ptr = byte_array;
+
+    // Encrypt data
+    encryption_state->Process(byte_array, data_size, buffer_p, data_size);
+//    T encrypted_data(reinterpret_cast<const char *>(buffer_p), data_size);
+    T encrypted_data = EncryptAndConvert<T>(buffer_p, data_size, byte_array);
+
+#if 0
+        D_ASSERT(CheckEncryption(printable_encrypted_data, buffer_p, size, reinterpret_cast<const_data_ptr_t>(name.GetData()), state) == 1);
+#endif
+
+    // attach the tag at the end of the encrypted data
+    unsigned char tag[16];
+    // this does not do anything for CTR
+    encryption_state->Finalize(buffer_p, 0, tag, 16);
+
+    return encrypted_data;
+  });
+}
+
+// Helper function that dispatches the runtime type to the appropriate templated function
+void ExecuteWithRuntimeType(Vector &vector, Vector &result, idx_t size, ExpressionState &state, const string &key_t) {
+  // Check the vector type and call the correct templated version
+  switch (vector.GetType().id()) {
+  case LogicalTypeId::INTEGER:
+    ExecuteWithUnaryExecutor<int32_t>(vector, result, size, state, key_t);
+    break;
+  case LogicalTypeId::BIGINT:
+    ExecuteWithUnaryExecutor<int64_t>(vector, result, size, state, key_t);
+    break;
+  case LogicalTypeId::VARCHAR:
+    ExecuteWithUnaryExecutor<string_t>(vector, result, size, state, key_t);
+    break;
+  // Add cases for other types as needed
+  default:
+    throw NotImplementedException("Unsupported type for UnaryExecutor");
+  }
+}
+
+static void EncryptData(DataChunk &args, ExpressionState &state, Vector &result) {
+
+  auto &value_vector = args.data[0];
 
   // Get the encryption key
   auto &key_vector = args.data[1];
@@ -224,67 +325,19 @@ static void EncryptData(DataChunk &args, ExpressionState &state,
   // Fetch the encryption key as a constant string
   const string key_t = ConstantVector::GetData<string_t>(key_vector)[0].GetString();
 
-  // how to check the data type of the vector?
-
-  // TODO; handle all different input types
-  UnaryExecutor::Execute<string_t, string_t>(
-      name_vector, result, args.size(), [&](string_t name) {
-
-        // renew for each value
-        // maybe put this in the state of the extension? But how about parallelism?
-        uint8_t encryption_buffer[MAX_BUFFER_SIZE];
-        uint8_t *buffer_p = encryption_buffer;
-        auto name_size = name.GetSize();
-
-        // round the size to multiple of 16 for encryption efficiency
-//        size = (size + 15) & ~15;
-
-        unsigned char iv[16];
-        // const string key = TEST_KEY;
-        auto encryption_state = InitializeCryptoState(state);
-
-        // fix IV for now
-        memcpy((void *)iv, "12345678901", 12);
-        //
-        //  // TODO; construct nonce based on immutable ROW_ID + hash(col_name)
-        iv[12] = 0x00;
-        iv[13] = 0x00;
-        iv[14] = 0x00;
-        iv[15] = 0x00;
-
-        //        encryption_state->GenerateRandomData(iv, 16);
-        encryption_state->InitializeEncryption(iv, 16, &key_t);
-
-        // at some point, input gets invalid
-        auto input = reinterpret_cast<const_data_ptr_t>(name.GetData());
-        encryption_state->Process(input, name_size, buffer_p, name_size);
-
-#if 0
-        D_ASSERT(MAX_BUFFER_SIZE ==
-                 sizeof(encryption_buffer) / sizeof(encryption_buffer[0]));
-#endif
-
-        string_t encrypted_data(reinterpret_cast<const char *>(buffer_p), name_size);
-
-#if 0
-        D_ASSERT(CheckEncryption(printable_encrypted_data, buffer_p, size, reinterpret_cast<const_data_ptr_t>(name.GetData()), state) == 1);
-#endif
-
-        // attach the tag at the end of the encrypted data
-        unsigned char tag[16];
-        // this does not do anything for CTR
-        encryption_state->Finalize(buffer_p, 0, tag, 16);
-
-        return encrypted_data;
-      });
+  // can we not pass by reference?
+  ExecuteWithRuntimeType(value_vector, result, args.size(), state, key_t);
 }
 
 ScalarFunctionSet GetEncryptionFunction() {
   ScalarFunctionSet set("encrypt");
   // TODO; support all available types for encryption
   for (auto &type : LogicalType::AllTypes()) {
+
+    // input is column of any type, key is of type VARCHAR, output is of same type
     set.AddFunction(ScalarFunction({type, LogicalType::VARCHAR}, LogicalType::BLOB, EncryptData,
                                   EncryptFunctionData::EncryptBind));
+
   }
   return set;
 }

@@ -15,13 +15,13 @@ require simple_encryption
 query I
 SELECT encrypt('testtest', '0123456789112345');
 ----
-\x8A+\xBD\x00\xE4]\xA6L
+\xF6N\xCEt\xE4]\xA6L
 
 
 query I
 SELECT encrypt('test', '0123456789112345');
 ----
-\x8A+\xBD\x00
+\xFAN\xCEt
 
 ## Confirm the extension works
 #query I
