@@ -6,11 +6,6 @@
 #include "simple_encryption_extension.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
-#include "duckdb/common/encryption_state.hpp"
-#include "duckdb/common/string_util.hpp"
-#include "duckdb/function/scalar_function.hpp"
-#include "duckdb/main/extension_util.hpp"
-#include "mbedtls_wrapper.hpp"
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 #include "duckdb/common/types/blob.hpp"
 #include "simple_encryption_state.hpp"
@@ -31,6 +26,8 @@ static void LoadInternal(DatabaseInstance &instance) {
 
     // set pointer to OpenSSL encryption state
     config.encryption_util = make_shared_ptr<AESStateSSLFactory>();
+
+    // Add extension callback
     config.extension_callbacks.push_back(make_uniq<SimpleEncryptionExtensionCallback>());
 
     // Register the SimpleEncryptionState for all connections

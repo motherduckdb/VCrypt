@@ -18,18 +18,8 @@ SELECT encrypt('testtest');
 \x8A+\xBD\x00\xE4]\xA6L
 
 
+# Confirm the extension works
 query I
-SELECT encrypt('test');
+SELECT decrypt('\x8A+\xBD\x00\xE4]\xA6L');
 ----
-\x8A+\xBD\x00
-
-## Confirm the extension works
-#query I
-#SELECT simple_encryption('Sam');
-#----
-#SimpleEncryption Sam 🐥
-#
-#query I
-#SELECT simple_encryption_openssl_version('Michael') ILIKE 'SimpleEncryption Michael, my linked OpenSSL version is OpenSSL%';
-#----
-#true
+test

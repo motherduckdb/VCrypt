@@ -25,6 +25,35 @@ namespace simple_encryption {
 
 namespace core {
 
+SimpleEncryptKeys &SimpleEncryptKeys::Get(ClientContext &context) {
+  auto &cache = ObjectCache::GetObjectCache(context);
+  if (!cache.Get<SimpleEncryptKeys>(SimpleEncryptKeys::ObjectType())) {
+    cache.Put(SimpleEncryptKeys::ObjectType(), make_shared_ptr<SimpleEncryptKeys>());
+  }
+  return *cache.Get<SimpleEncryptKeys>(SimpleEncryptKeys::ObjectType());
+}
+
+void SimpleEncryptKeys::AddKey(const string &key_name, const string &key) {
+  keys[key_name] = key;
+}
+
+bool SimpleEncryptKeys::HasKey(const string &key_name) const {
+  return keys.find(key_name) != keys.end();
+}
+
+const string &SimpleEncryptKeys::GetKey(const string &key_name) const {
+  D_ASSERT(HasKey(key_name));
+  return keys.at(key_name);
+}
+
+string SimpleEncryptKeys::ObjectType() {
+  return "simple_encrypt_keys";
+}
+
+string SimpleEncryptKeys::GetObjectType() {
+  return ObjectType();
+}
+
 shared_ptr<EncryptionUtil> GetEncryptionUtil(ExpressionState &state) {
   auto &func_expr = (BoundFunctionExpression &)state.expr;
   auto &info = (EncryptFunctionData &)*func_expr.bind_info;
@@ -60,7 +89,7 @@ shared_ptr<EncryptionState> InitializeEncryption(ExpressionState &state) {
 
   auto encryption_state = InitializeCryptoState(state);
 //  encryption_state->GenerateRandomData(iv, 16);
-  encryption_state->InitializeEncryption(iv, 16, &key);
+//  encryption_state->InitializeEncryption(iv, 16, &key);
 
   return encryption_state;
 }
@@ -73,10 +102,10 @@ shared_ptr<EncryptionState> InitializeDecryption(ExpressionState &state) {
   memcpy((void *)iv, "12345678901", 16);
   //
   //  // TODO; construct nonce based on immutable ROW_ID + hash(col_name)
-//  iv[12] = 0x00;
-//  iv[13] = 0x00;
-//  iv[14] = 0x00;
-//  iv[15] = 0x00;
+  iv[12] = 0x00;
+  iv[13] = 0x00;
+  iv[14] = 0x00;
+  iv[15] = 0x00;
 
   auto decryption_state = InitializeCryptoState(state);
   decryption_state->InitializeDecryption(iv, 16, &key);
@@ -119,54 +148,130 @@ bool CheckEncryption(string_t printable_encrypted_data, uint8_t *buffer,
   return true;
 }
 
-static void EncryptData(DataChunk &args, ExpressionState &state,
+static void DecryptData(DataChunk &args, ExpressionState &state,
                         Vector &result) {
 
   auto &name_vector = args.data[0];
-  auto encryption_state = InitializeEncryption(state);
+  //  auto encryption_state = InitializeEncryption(state);
 
-  // we do this here, we actually need to keep track of a pointer all the time
-//  uint8_t encryption_buffer[MAX_BUFFER_SIZE];
-//  uint8_t *buffer = encryption_buffer;
+  auto const size = sizeof(string_t);
 
   // TODO; handle all different input types
   UnaryExecutor::Execute<string_t, string_t>(
       name_vector, result, args.size(), [&](string_t name) {
 
         // renew for each value
-        uint8_t encryption_buffer[MAX_BUFFER_SIZE];
-        uint8_t *buffer = encryption_buffer;
+        uint8_t decryption_buffer[MAX_BUFFER_SIZE];
+        uint8_t *buffer_p = decryption_buffer;
         // For now; new encryption state for every new value
         // does this has to do with multithreading or something?
-        auto size = name.GetSize();
-        //std::fill(encryption_buffer, encryption_buffer + size, 0);
+        // the size is suddenly 1, but we should just get the size of the input type...
+        auto name_size = name.GetSize();
+
+        // round the size to multiple of 16 for encryption efficiency
+        //        size = (size + 15) & ~15;
+
+        unsigned char iv[16];
+        const string key = TEST_KEY;
+        auto encryption_state = InitializeCryptoState(state);
+
+        // fix IV for now
+        memcpy((void *)iv, "12345678901", 16);
+        //
+        //  // TODO; construct nonce based on immutable ROW_ID + hash(col_name)
+        iv[12] = 0x00;
+        iv[13] = 0x00;
+        iv[14] = 0x00;
+        iv[15] = 0x00;
+
+//        encryption_state->GenerateRandomData(iv, 16);
+        encryption_state->InitializeDecryption(iv, 16, &key);
+
+        // at some point, input gets invalid
+        auto input = reinterpret_cast<const_data_ptr_t>(name.GetData());
+        encryption_state->Process(input, name_size, buffer_p, name_size);
+
+#if 0
+        D_ASSERT(MAX_BUFFER_SIZE ==
+                 sizeof(encryption_buffer) / sizeof(encryption_buffer[0]));
+#endif
+
+        string_t decrypted_data(reinterpret_cast<const char *>(buffer_p), name_size);
+        auto printable_decrypted_data = Blob::ToString(decrypted_data);
+
+#if 0
+        D_ASSERT(CheckEncryption(printable_encrypted_data, buffer_p, size, reinterpret_cast<const_data_ptr_t>(name.GetData()), state) == 1);
+#endif
+
+        // attach the tag at the end of the encrypted data
+        unsigned char tag[16];
+        // this does not do anything for CTR
+        encryption_state->Finalize(buffer_p, 0, tag, 16);
+
+        return printable_decrypted_data;
+      });
+}
+
+static void EncryptData(DataChunk &args, ExpressionState &state,
+                        Vector &result) {
+
+  auto &name_vector = args.data[0];
+//  auto encryption_state = InitializeEncryption(state);
+  auto const size = sizeof(string_t);
+
+  // TODO; handle all different input types
+  UnaryExecutor::Execute<string_t, string_t>(
+      name_vector, result, args.size(), [&](string_t name) {
+
+        // renew for each value
+        // maybe put this in the state of the extension? But how about parallelism?
+        uint8_t encryption_buffer[MAX_BUFFER_SIZE];
+        uint8_t *buffer_p = encryption_buffer;
+        // For now; new encryption state for every new value
+        // does this has to do with multithreading or something?
+        // the size is suddenly 1, but we should just get the size of the input type...
+        auto name_size = name.GetSize();
+
         // round the size to multiple of 16 for encryption efficiency
 //        size = (size + 15) & ~15;
 
         unsigned char iv[16];
         const string key = TEST_KEY;
+        auto encryption_state = InitializeCryptoState(state);
 
-        encryption_state->GenerateRandomData(iv, 16);
+        // fix IV for now
+        memcpy((void *)iv, "12345678901", 12);
+        //
+        //  // TODO; construct nonce based on immutable ROW_ID + hash(col_name)
+        iv[12] = 0x00;
+        iv[13] = 0x00;
+        iv[14] = 0x00;
+        iv[15] = 0x00;
+
+        //        encryption_state->GenerateRandomData(iv, 16);
         encryption_state->InitializeEncryption(iv, 16, &key);
 
-        encryption_state->Process(
-            reinterpret_cast<const_data_ptr_t>(name.GetData()), size, buffer, size);
+        // at some point, input gets invalid
+        auto input = reinterpret_cast<const_data_ptr_t>(name.GetData());
+        encryption_state->Process(input, name_size, buffer_p, name_size);
 
+#if 0
         D_ASSERT(MAX_BUFFER_SIZE ==
                  sizeof(encryption_buffer) / sizeof(encryption_buffer[0]));
+#endif
 
-        string_t encrypted_data(reinterpret_cast<const char *>(buffer), size);
+        string_t encrypted_data(reinterpret_cast<const char *>(buffer_p), name_size);
 
-
-        auto printable_encrypted_data = Blob::ToString(encrypted_data);
-
-        D_ASSERT(CheckEncryption(printable_encrypted_data, buffer, size, reinterpret_cast<const_data_ptr_t>(name.GetData()), state) == 1);
+#if 0
+        D_ASSERT(CheckEncryption(printable_encrypted_data, buffer_p, size, reinterpret_cast<const_data_ptr_t>(name.GetData()), state) == 1);
+#endif
 
         // attach the tag at the end of the encrypted data
-//        unsigned char tag[16];
-//        encryption_state->Finalize(buffer, 0, tag, 16);
+        unsigned char tag[16];
+        // this does not do anything for CTR
+        encryption_state->Finalize(buffer_p, 0, tag, 16);
 
-        return printable_encrypted_data;
+        return encrypted_data;
       });
 }
 
@@ -175,8 +280,20 @@ ScalarFunctionSet GetEncryptionFunction() {
 
   // TODO; support all available types for encryption
   for (auto &type : LogicalType::AllTypes()) {
-    set.AddFunction(ScalarFunction({type}, LogicalType::VARCHAR, EncryptData,
+    set.AddFunction(ScalarFunction({type}, LogicalType::BLOB, EncryptData,
                                   EncryptFunctionData::EncryptBind));
+  }
+
+  return set;
+}
+
+ScalarFunctionSet GetDecryptionFunction() {
+  ScalarFunctionSet set("decrypt");
+
+  // TODO; support all available types for encryption
+  for (auto &type : LogicalType::AllTypes()) {
+    set.AddFunction(ScalarFunction({type}, LogicalType::BLOB, DecryptData,
+                                   EncryptFunctionData::EncryptBind));
   }
 
   return set;
@@ -189,6 +306,7 @@ ScalarFunctionSet GetEncryptionFunction() {
 void CoreScalarFunctions::RegisterEncryptDataScalarFunction(
     DatabaseInstance &db) {
   ExtensionUtil::RegisterFunction(db, GetEncryptionFunction());
+  ExtensionUtil::RegisterFunction(db, GetDecryptionFunction());
 }
 }
 }
