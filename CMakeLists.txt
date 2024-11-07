@@ -17,13 +17,16 @@ include_directories(src/include)
 add_subdirectory(src)
 include_directories(../duckdb/third_party/httplib/include)
 
-# by now do this manually
+# by now do this manually, later fix this
 set(EXTENSION_SOURCES src/simple_encryption_extension.cpp
         src/simple_encryption_extension.cpp
         src/simple_encryption_state.cpp
         src/core/module.cpp
+        src/core/types.cpp
         src/core/functions/scalar/encrypt.cpp
+        src/core/functions/scalar/struct_encrypt.cpp
         src/core/functions/function_data/encrypt_function_data.cpp
+        src/core/functions/cast/varchar_cast.cpp
         src/core/functions/table/encrypt_table.cpp
         src/core/utils/simple_encryption_utils.cpp
         src/core/crypto/crypto_primitives.cpp

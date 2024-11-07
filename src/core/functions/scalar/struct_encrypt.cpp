@@ -69,7 +69,7 @@ shared_ptr<EncryptionState> InitializeCryptoState(ExpressionState &state) {
 
   if (!encryption_state) {
     return duckdb_mbedtls::MbedTlsWrapper::AESGCMStateMBEDTLSFactory()
-                   .CreateEncryptionState();
+        .CreateEncryptionState();
   }
 
   return encryption_state->CreateEncryptionState();
@@ -107,7 +107,7 @@ inline const uint8_t *DecryptValue(uint8_t *buffer, size_t size, ExpressionState
 }
 
 bool CheckEncryption(string_t printable_encrypted_data, uint8_t *buffer,
-                            size_t size, const uint8_t *value, ExpressionState &state){
+                     size_t size, const uint8_t *value, ExpressionState &state){
 
   // cast encrypted data to blob back and forth
   // to check whether data will be lost with casting
@@ -224,8 +224,7 @@ void ExecuteEncryptStructExecutor(Vector &vector, Vector &result, idx_t size, Ex
         {"value", LogicalType::INTEGER}
     });
 
-    struct_type[0] = 1;
-    struct_type[1] =
+    StructValue result;
 
     // Use StructWriter to return struct result
     StructWriter writer(result, struct_type);
@@ -424,10 +423,10 @@ static void DecryptData(DataChunk &args, ExpressionState &state, Vector &result)
 ScalarFunctionSet GetEncryptionFunction() {
   ScalarFunctionSet set("encrypt");
 
-//  set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::VARCHAR}, LogicalTypeId::INTEGER, EncryptData,
-//                                 EncryptFunctionData::EncryptBind));
+  //  set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::VARCHAR}, LogicalTypeId::INTEGER, EncryptData,
+  //                                 EncryptFunctionData::EncryptBind));
 
-  set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::VARCHAR}, LogicalTypeId::INTEGER, EncryptDataStruct,
+  set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::VARCHAR}, EncryptionTypes::E_INT(), EncryptDataStruct,
                                  EncryptFunctionData::EncryptBind));
 
   set.AddFunction(ScalarFunction({LogicalTypeId::BIGINT, LogicalType::VARCHAR}, LogicalTypeId::BIGINT, EncryptData,
@@ -436,8 +435,8 @@ ScalarFunctionSet GetEncryptionFunction() {
   set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::BLOB, EncryptData,
                                  EncryptFunctionData::EncryptBind));
 
-//  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::VARCHAR, EncryptData,
-//                                 EncryptFunctionData::EncryptBind));
+  //  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::VARCHAR, EncryptData,
+  //                                 EncryptFunctionData::EncryptBind));
 
   return set;
 }
@@ -455,8 +454,8 @@ ScalarFunctionSet GetDecryptionFunction() {
   set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::VARCHAR, DecryptData,
                                  EncryptFunctionData::EncryptBind));
 
-//  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::BLOB, DecryptData,
-//                                 EncryptFunctionData::EncryptBind));
+  //  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::BLOB, DecryptData,
+  //                                 EncryptFunctionData::EncryptBind));
 
   return set;
 }
