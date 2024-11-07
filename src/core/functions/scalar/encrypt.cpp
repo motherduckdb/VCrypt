@@ -128,6 +128,8 @@ bool CheckEncryption(string_t printable_encrypted_data, uint8_t *buffer,
 }
 
 // Generated code
+//---------------------------------------------------------------------------------------------
+
 template <typename T>
 typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
 ConvertCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
@@ -136,7 +138,25 @@ ConvertCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data
   return encrypted_data;
 }
 
-// Handle string_t type
+// Handle string_t type and convert to Base64
+//template <typename T>
+//typename std::enable_if<std::is_same<T, string_t>::value, T>::type
+//ConvertCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
+//  // Create a blob from the encrypted buffer data
+//  string_t blob(reinterpret_cast<const char *>(buffer_p), data_size);
+//
+//  // Define a base64 output buffer large enough to store the encoded result
+//  size_t base64_size = Blob::ToBase64Size(blob);
+//  unique_ptr<char[]> base64_output(new char[base64_size]);
+//
+//  // Convert blob to base64 and store it in the output buffer
+//  Blob::ToBase64(blob, base64_output.get());
+//
+//  // Return the base64-encoded result as a new string_t
+//  return string_t(blob.GetString());
+//}
+
+// TODO: for decryption, convert a string to blob and then decrypt and then return string_t?
 template <typename T>
 typename std::enable_if<std::is_same<T, string_t>::value, T>::type
 ConvertCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
@@ -164,6 +184,7 @@ GetSizeOfInput(const T &input) {
   // For string_t, get actual string data size
   return input.GetSize();
 }
+//---------------------------------------------------------------------------------------------
 
 
 template <typename T>
@@ -196,14 +217,14 @@ void ExecuteEncryptExecutor(Vector &vector, Vector &result, idx_t size, Expressi
         D_ASSERT(CheckEncryption(printable_encrypted_data, buffer_p, size, reinterpret_cast<const_data_ptr_t>(name.GetData()), state) == 1);
 #endif
 
-    // attach the tag at the end of the encrypted data
-    unsigned char tag[16];
     // this does not do anything for CTR and therefore can be skipped
-    encryption_state->Finalize(buffer_p, 0, tag, 16);
-
+    encryption_state->Finalize(buffer_p, 0, nullptr, 0);
     return encrypted_data;
   });
 }
+
+// Generated code
+//---------------------------------------------------------------------------------------------
 
 // Helper function that dispatches the runtime type to the appropriate templated function
 void ExecuteEncrypt(Vector &vector, Vector &result, idx_t size, ExpressionState &state, const string &key_t) {
@@ -222,6 +243,7 @@ void ExecuteEncrypt(Vector &vector, Vector &result, idx_t size, ExpressionState 
     throw NotImplementedException("Unsupported type for Encryption");
   }
 }
+//---------------------------------------------------------------------------------------------
 
 template <typename T>
 void ExecuteDecryptExecutor(Vector &vector, Vector &result, idx_t size, ExpressionState &state, const string &key_t) {
@@ -253,14 +275,15 @@ void ExecuteDecryptExecutor(Vector &vector, Vector &result, idx_t size, Expressi
         D_ASSERT(CheckEncryption(printable_encrypted_data, buffer_p, size, reinterpret_cast<const_data_ptr_t>(name.GetData()), state) == 1);
 #endif
 
-    // attach the tag at the end of the encrypted data
-    unsigned char tag[16];
-    // this does not do anything for CTR and therefore can be skipped
-    encryption_state->Finalize(buffer_p, 0, tag, 16);
 
+    // this does not do anything for CTR and therefore can be skipped
+    encryption_state->Finalize(buffer_p, 0, nullptr, 0);
     return decrypted_data;
   });
 }
+
+// Generated code
+//---------------------------------------------------------------------------------------------
 
 // Helper function that dispatches the runtime type to the appropriate templated function
 void ExecuteDecrypt(Vector &vector, Vector &result, idx_t size, ExpressionState &state, const string &key_t) {
@@ -279,6 +302,7 @@ void ExecuteDecrypt(Vector &vector, Vector &result, idx_t size, ExpressionState 
     throw NotImplementedException("Unsupported type for Encryption");
   }
 }
+//---------------------------------------------------------------------------------------------
 
 static void EncryptData(DataChunk &args, ExpressionState &state, Vector &result) {
 
@@ -307,7 +331,7 @@ static void DecryptData(DataChunk &args, ExpressionState &state, Vector &result)
   const string key_t = ConstantVector::GetData<string_t>(key_vector)[0].GetString();
 
   // can we not pass by reference?
-  ExecuteEncrypt(value_vector, result, args.size(), state, key_t);
+  ExecuteDecrypt(value_vector, result, args.size(), state, key_t);
 }
 
 ScalarFunctionSet GetEncryptionFunction() {
