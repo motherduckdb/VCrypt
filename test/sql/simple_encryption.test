@@ -11,19 +11,44 @@ Catalog Error: Scalar Function with name simple_encryption does not exist!
 # Require statement will ensure this test is run with this extension loaded
 require simple_encryption
 
-# Confirm the extension works
+#INTEGER
+query I
+SELECT encrypt(11, '0123456789112345');
+----
+1959677685
+
+#INTEGER
+query I
+SELECT decrypt(1959677685, '0123456789112345');
+----
+11
+
+#BIGINT
+query I
+SELECT encrypt(0123456789112345, '0123456789112345');
+----
+4095259532786215143
+
+#BIGINT
+query I
+SELECT decrypt(4095259532786215143, '0123456789112345');
+----
+0123456789112345
+
+#VARCHAR
 query I
 SELECT encrypt('testtest', '0123456789112345');
 ----
 \xF6N\xCEt\xE4]\xA6L
 
+#VARCHAR
+query I
+SELECT decrypt('\xF6N\xCEt\xE4]\xA6L', '0123456789112345');
+----
+testtest
 
+#VARCHAR
 query I
 SELECT encrypt('test', '0123456789112345');
 ----
 \xFAN\xCEt
-
-query I
-SELECT encrypt(11, '0123456789112345');
-----
-1959677685
