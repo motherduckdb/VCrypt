@@ -224,18 +224,10 @@ void ExecuteEncryptStructExecutor(Vector &vector, Vector &result, idx_t size, Ex
         {"value", LogicalType::INTEGER}
     });
 
-    StructValue result;
-
-    // Use StructWriter to return struct result
-    StructWriter writer(result, struct_type);
-    writer.Write<idx_t, int32_t>(0, nonce);
-    writer.Write<idx_t, T>(1, encrypted_data);
-    writer.Finalize();
-
     // this does not do anything for CTR and therefore can be skipped
     encryption_state->Finalize(buffer_p, 0, nullptr, 0);
     uint32_t nonce = 1;
-    return {nonce, encrypted_data};
+    return encrypted_data;
   });
 }
 
