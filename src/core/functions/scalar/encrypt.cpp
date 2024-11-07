@@ -124,49 +124,45 @@ bool CheckEncryption(string_t printable_encrypted_data, uint8_t *buffer,
     throw InvalidInputException(
         "Original Data differs from Decrypted Data");
   }
-
   return true;
 }
 
-
-// FIX: make C++11 compatible
 // Generated code
-// misschien duckdb types doen ipv die andere dingen
 template <typename T>
-T ConvertCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
-
-  if constexpr (std::is_integral<T>::value || std::is_floating_point<T>::value) {
-    T encrypted_data;
-    memcpy(&encrypted_data, buffer_p, sizeof(T));
-    return encrypted_data;
-
-  } else if constexpr (std::is_same<T, string_t>::value) {
-    //        string_t decrypted_data(reinterpret_cast<const char *>(buffer_p), name_size);
-    //        auto printable_decrypted_data = Blob::ToString(decrypted_data);
-    return string_t(reinterpret_cast<const char *>(buffer_p), data_size);
-
-  } else {
-    InvalidInputException("Unsupported type for Encryption");
-  }
+typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
+ConvertCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
+  T encrypted_data;
+  memcpy(&encrypted_data, buffer_p, sizeof(T));
+  return encrypted_data;
 }
 
-// FIX: make C++11 compatible
-// Generated code
+// Handle string_t type
 template <typename T>
-size_t GetSizeOfInput(const T &input) {
+typename std::enable_if<std::is_same<T, string_t>::value, T>::type
+ConvertCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
+  return string_t(reinterpret_cast<const char *>(buffer_p), data_size);
+}
 
-  size_t data_size;
+// Catch-all for unsupported types
+template <typename T>
+typename std::enable_if<!std::is_integral<T>::value && !std::is_floating_point<T>::value && !std::is_same<T, string_t>::value, T>::type
+ConvertCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
+  throw std::invalid_argument("Unsupported type for Encryption");
+}
 
-  if constexpr (std::is_same<T, string_t>::value) {
-    // For string_t, get actual string data size and pointer
-    data_size = input.GetSize();
+template <typename T>
+typename std::enable_if<!std::is_same<T, string_t>::value, size_t>::type
+GetSizeOfInput(const T &input) {
+  // For numeric types, use sizeof(T) directly
+  return sizeof(T);
+}
 
-  } else {
-    // For numeric types, use sizeof(T) directly
-    data_size = sizeof(T);
-  }
-
-  return data_size;
+// Specialized template for string_t type
+template <typename T>
+typename std::enable_if<std::is_same<T, string_t>::value, size_t>::type
+GetSizeOfInput(const T &input) {
+  // For string_t, get actual string data size
+  return input.GetSize();
 }
 
 
