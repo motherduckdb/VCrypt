@@ -3,23 +3,46 @@
 # group: [simple_encryption]
 
 # Before we load the extension, this will fail
-statement error
-SELECT simple_encryption('Test');
-----
-Catalog Error: Scalar Function with name simple_encryption does not exist!
+statement ok
+ CREATE TABLE rd_data_2 AS
+  SELECT
+      1 AS testint
+  FROM
+      range(10);
 
-# Require statement will ensure this test is run with this extension loaded
-require simple_encryption
-
-# Confirm the extension works
-query I
-SELECT encrypt('testtest');
-----
-\x8A+\xBD\x00\xE4]\xA6L
+statement ok
+ALTER TABLE rd_data_2
+  ADD COLUMN encrypted_value INTEGER
+  ADD COLUMN decrypted_value INTEGER;
 
 
-# Confirm the extension works
-query I
-SELECT decrypt('\x8A+\xBD\x00\xE4]\xA6L');
-----
-test
+statement ok
+UPDATE rd_data_2
+  SET encrypted_value = encrypt(testint, '0123456789112345');
+
+statement ok
+SET decrypted_value = decrypt(encrypted_value, '0123456789112345');
+
+
+statement ok
+CREATE TABLE rd_data AS
+    SELECT
+        SUBSTRING(MD5(RANDOM()::TEXT), 1, 5) AS rd_values
+    FROM
+        range(10);
+
+statement ok
+ALTER TABLE rd_data
+  ADD COLUMN encrypted_value VARCHAR;
+
+statement ok
+ALTER TABLE rd_data
+  ADD COLUMN decrypted_value VARCHAR;
+
+statement ok
+UPDATE rd_data
+SET encrypted_value = encrypt(rd_values, '0123456789112345');
+
+statement ok
+UPDATE rd_data
+SET decrypted_value = decrypt(encrypted_value, '0123456789112345');
