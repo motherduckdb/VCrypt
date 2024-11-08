@@ -39,11 +39,11 @@ SELECT decrypt(4095259532786215143, '0123456789112345');
 query I
 SELECT encrypt('testtest', '0123456789112345');
 ----
-\xF6N\xCEt\xE4]\xA6L
+iiu9AORdpkw=
 
 #VARCHAR
 query I
-SELECT decrypt('\xF6N\xCEt\xE4]\xA6L', '0123456789112345');
+SELECT decrypt('iiu9AORdpkw=', '0123456789112345');
 ----
 testtest
 
@@ -51,4 +51,10 @@ testtest
 query I
 SELECT encrypt('test', '0123456789112345');
 ----
-\xFAN\xCEt
+iiu9AA==
+
+#VARCHAR
+query I
+SELECT decrypt('iiu9AA==', '0123456789112345');
+----
+test
