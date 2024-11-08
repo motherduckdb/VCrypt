@@ -203,6 +203,12 @@ void ExecuteEncryptStructExecutor(Vector &vector, Vector &result, idx_t size, Ex
   memcpy(iv, "12345678901", 12);
   iv[12] = iv[13] = iv[14] = iv[15] = 0x00;
 
+  // we don't go with the unary executor anymore
+  // allocate new vector
+  result.SetVectorType(VectorType::FLAT_VECTOR);
+
+  StructVector result_vector;
+
   UnaryExecutor::Execute<T, T>(vector, result, size, [&](T input) -> T {
     unsigned char byte_array[sizeof(T)];
     auto data_size = GetSizeOfInput(input);
@@ -232,7 +238,7 @@ void ExecuteEncryptStructExecutor(Vector &vector, Vector &result, idx_t size, Ex
 }
 
 template <typename T>
-void ExecuteEncryptExecutor(Vector &vector, Vector &result, idx_t size, ExpressionState &state, const string &key_t) {
+void ExecuteDecryptStructExecutor(Vector &vector, Vector &result, idx_t size, ExpressionState &state, const string &key_t) {
 
   // TODO: put this in the state of the extension
   uint8_t encryption_buffer[MAX_BUFFER_SIZE];
@@ -275,13 +281,13 @@ void ExecuteEncrypt(Vector &vector, Vector &result, idx_t size, ExpressionState 
   // Check the vector type and call the correct templated version
   switch (vector.GetType().id()) {
   case LogicalTypeId::INTEGER:
-    ExecuteEncryptExecutor<int32_t>(vector, result, size, state, key_t);
+    ExecuteEncryptStructExecutor<int32_t>(vector, result, size, state, key_t);
     break;
   case LogicalTypeId::BIGINT:
-    ExecuteEncryptExecutor<int64_t>(vector, result, size, state, key_t);
+    ExecuteEncryptStructExecutor<int64_t>(vector, result, size, state, key_t);
     break;
   case LogicalTypeId::VARCHAR:
-    ExecuteEncryptExecutor<string_t>(vector, result, size, state, key_t);
+    ExecuteEncryptStructExecutor<string_t>(vector, result, size, state, key_t);
     break;
   default:
     throw NotImplementedException("Unsupported type for Encryption");
@@ -367,19 +373,65 @@ void ExecuteDecrypt(Vector &vector, Vector &result, idx_t size, ExpressionState 
 }
 //---------------------------------------------------------------------------------------------
 
-static void EncryptData(DataChunk &args, ExpressionState &state, Vector &result) {
+static void EncryptDataStruct(DataChunk &args, ExpressionState &state, Vector &result) {
 
-  auto &value_vector = args.data[0];
+  auto &func_expr = (BoundFunctionExpression &)state.expr;
+  auto &info = (EncryptFunctionData &)*func_expr.bind_info;
+
+  // refactor this to GetSimpleEncryptionState(info.context);
+  auto simple_encryption_state = info.context.registered_state->Get<SimpleEncryptionState>("simple_encryption");
+
+  // Convert input vector to a unified format
+  auto &plaintext_vector = args.data[0];
+  UnifiedVectorFormat plaintext_vdata;
+  plaintext_vector.ToUnifiedFormat(args.size(), plaintext_vdata);
+
+  // Store a pointer to the start of the plaintext data
+  auto plaintext_data = (int64_t *)plaintext_vdata.data;
 
   // Get the encryption key
+  // TODO get key from the clientcontext!
   auto &key_vector = args.data[1];
   D_ASSERT(key_vector.GetVectorType() == VectorType::CONSTANT_VECTOR);
-
   // Fetch the encryption key as a constant string
   const string key_t = ConstantVector::GetData<string_t>(key_vector)[0].GetString();
 
-  // can we not pass by reference?
-  ExecuteEncrypt(value_vector, result, args.size(), state, key_t);
+  // set result vector type
+  result.SetVectorType(VectorType::FLAT_VECTOR);
+
+  // This is the vector for the resulting data
+  auto result_data = FlatVector::GetData<list_entry_t>(result);
+  ValidityMask &result_validity = FlatVector::Validity(result);
+
+  // create structvect
+  LogicalType result_struct = LogicalType::STRUCT({
+      {"nonce", LogicalType::INTEGER},
+      {"value", LogicalType::INTEGER}
+  });
+
+  Vector struct_vector(result_struct, args.size());
+
+  // 3. Get the child vectors from the struct vector
+  auto &children = StructVector::GetEntries(struct_vector);
+
+  children.push_back(make_uniq<Vector>(LogicalType::INTEGER, args.size())); // 10 is the number of rows
+  children.push_back(make_uniq<Vector>(LogicalType::INTEGER, args.size()));
+
+  unique_ptr<Vector> output = make_uniq<Vector>(LogicalType::STRUCT({{"nonce", LogicalType::INTEGER},
+                                                                    {"value", LogicalType::INTEGER}}));
+
+
+  // 4. Populate the child vectors with sample data
+  auto &nonce_vector = *children[0];
+  auto &value_vector = *children[1];
+
+  // do we need to put pointers in result.auxiliary
+  result.auiliary = &result_vector;
+
+  // just now execute encrypt per value
+  ExecuteEncryptStruct(plaintext_vector, result, args.size(), state, key_t);
+
+  return
 }
 
 static void EncryptDataStruct(DataChunk &args, ExpressionState &state, Vector &result) {
@@ -397,7 +449,7 @@ static void EncryptDataStruct(DataChunk &args, ExpressionState &state, Vector &r
   ExecuteEncryptStruct(value_vector, result, args.size(), state, key_t);
 }
 
-static void DecryptData(DataChunk &args, ExpressionState &state, Vector &result) {
+static void DecryptDataStruct(DataChunk &args, ExpressionState &state, Vector &result) {
 
   auto &value_vector = args.data[0];
 
@@ -413,41 +465,22 @@ static void DecryptData(DataChunk &args, ExpressionState &state, Vector &result)
 }
 
 ScalarFunctionSet GetEncryptionFunction() {
-  ScalarFunctionSet set("encrypt");
+  ScalarFunctionSet set("encrypt_etypes");
 
-  //  set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::VARCHAR}, LogicalTypeId::INTEGER, EncryptData,
-  //                                 EncryptFunctionData::EncryptBind));
 
   set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::VARCHAR}, EncryptionTypes::E_INT(), EncryptDataStruct,
                                  EncryptFunctionData::EncryptBind));
 
-  set.AddFunction(ScalarFunction({LogicalTypeId::BIGINT, LogicalType::VARCHAR}, LogicalTypeId::BIGINT, EncryptData,
-                                 EncryptFunctionData::EncryptBind));
-
-  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::BLOB, EncryptData,
-                                 EncryptFunctionData::EncryptBind));
-
-  //  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::VARCHAR, EncryptData,
-  //                                 EncryptFunctionData::EncryptBind));
 
   return set;
 }
 
 ScalarFunctionSet GetDecryptionFunction() {
-  ScalarFunctionSet set("decrypt");
+  ScalarFunctionSet set("decrypt_etypes");
 
   // input is column of any type, key is of type VARCHAR, output is of same type
-  set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::VARCHAR}, LogicalTypeId::INTEGER, DecryptData,
+  set.AddFunction(ScalarFunction({EncryptionTypes::E_INT(), LogicalType::VARCHAR}, LogicalTypeId::INTEGER, DecryptDataStruct,
                                  EncryptFunctionData::EncryptBind));
-
-  set.AddFunction(ScalarFunction({LogicalTypeId::BIGINT, LogicalType::VARCHAR}, LogicalTypeId::BIGINT, DecryptData,
-                                 EncryptFunctionData::EncryptBind));
-
-  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::VARCHAR, DecryptData,
-                                 EncryptFunctionData::EncryptBind));
-
-  //  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::BLOB, DecryptData,
-  //                                 EncryptFunctionData::EncryptBind));
 
   return set;
 }
