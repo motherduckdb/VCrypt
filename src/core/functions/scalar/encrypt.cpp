@@ -127,12 +127,10 @@ bool CheckEncryption(string_t printable_encrypted_data, uint8_t *buffer,
   return true;
 }
 
-// Generated code
-//---------------------------------------------------------------------------------------------
 
 template <typename T>
 typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
-ConvertCipherText(Vector &vector, uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
+ConvertToCipherText(Vector &vector, uint8_t *buffer_p, size_t data_size) {
   T encrypted_data;
   memcpy(&encrypted_data, buffer_p, sizeof(T));
   return encrypted_data;
@@ -141,7 +139,8 @@ ConvertCipherText(Vector &vector, uint8_t *buffer_p, size_t data_size, const uin
 // Handle string_t type and convert to Base64
 template <typename T>
 typename std::enable_if<std::is_same<T, string_t>::value, T>::type
-ConvertCipherText(Vector &vector, uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
+ConvertToCipherText(Vector &vector, uint8_t *buffer_p, size_t data_size) {
+
   string_t input(reinterpret_cast<const char *>(buffer_p), data_size);
   size_t base64_size = Blob::ToBase64Size(input);
   string_t output = StringVector::EmptyString(vector, base64_size);
@@ -152,10 +151,57 @@ ConvertCipherText(Vector &vector, uint8_t *buffer_p, size_t data_size, const uin
   return output;
 }
 
+// Template specialization for integral and floating point types
+// in decrypt, we want to translate the encrypted values to a buffer
+template <typename T>
+typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value, const char*>::type
+ConvertFromCipherText(uint8_t *buffer_p, size_t data_size, T *input_data) {
+  T decrypted_data;
+  memcpy(&decrypted_data, buffer_p, sizeof(T));
+  return decrypted_data;
+}
+
+// Template specialization for string_t
+template <typename T>
+typename std::enable_if<std::is_same<T, string_t>::value, const char*>::type
+ConvertFromCipherText(uint8_t *buffer_p, size_t data_size, T *input_data) {
+
+  // Decode Base64-encoded input into binary format
+  string_t input(reinterpret_cast<const char *>(buffer_p), data_size);
+  size_t base64_size = Blob::FromBase64Size(input);
+
+  // Convert from base64 to blob, storing it back in buffer_p
+  Blob::FromBase64(input, buffer_p, base64_size);
+
+  // return the buffer just directly
+  return input.GetString();
+}
+
+//template <typename T>
+//typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
+//ConvertFromCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
+//  T decrypted_data;
+//  memcpy(&decrypted_data, buffer_p, sizeof(T));
+//  return decrypted_data;
+//}
+//
+//template <typename T>
+//typename std::enable_if<std::is_same<T, string_t>::value, uint8_t *>::type
+//ConvertFromCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
+//
+//  string_t input(reinterpret_cast<const char *>(buffer_p), data_size);
+//  size_t base64_size = Blob::FromBase64Size(input);
+//
+//  // Convert From base64 to blob
+//  Blob::FromBase64(input, buffer_p, base64_size);
+//
+//  return buffer_p;
+//}
+
 // TODO: for decryption, convert a string to blob and then decrypt and then return string_t?
 //template <typename T>
 //typename std::enable_if<std::is_same<T, string_t>::value, T>::type
-//ConvertCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
+//ConvertToCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
 //  //
 //  return string_t(reinterpret_cast<const char *>(buffer_p), data_size);
 //}
@@ -163,12 +209,12 @@ ConvertCipherText(Vector &vector, uint8_t *buffer_p, size_t data_size, const uin
 // Catch-all for unsupported types
 template <typename T>
 typename std::enable_if<!std::is_integral<T>::value && !std::is_floating_point<T>::value && !std::is_same<T, string_t>::value, T>::type
-ConvertCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
+ConvertToCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
   throw std::invalid_argument("Unsupported type for Encryption");
 }
 
 template <typename T>
-typename std::enable_if<!std::is_same<T, string_t>::value, size_t>::type
+typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
 GetSizeOfInput(const T &input) {
   // For numeric types, use sizeof(T) directly
   return sizeof(T);
@@ -180,6 +226,20 @@ typename std::enable_if<std::is_same<T, string_t>::value, size_t>::type
 GetSizeOfInput(const T &input) {
   // For string_t, get actual string data size
   return input.GetSize();
+}
+
+// General template for numeric types
+template <typename T>
+typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value, const char*>::type
+GetCharData(const T &input) {
+  return reinterpret_cast<const char*>(&input);
+}
+
+// Specialized template for string_t type
+template <typename T>
+typename std::enable_if<std::is_same<T, string_t>::value, const char*>::type
+GetCharData(const T &input) {
+  return input.GetData();
 }
 //---------------------------------------------------------------------------------------------
 
@@ -199,16 +259,20 @@ void ExecuteEncryptExecutor(Vector &vector, Vector &result, idx_t size, Expressi
   iv[12] = iv[13] = iv[14] = iv[15] = 0x00;
 
   UnaryExecutor::Execute<T, T>(vector, result, size, [&](T input) -> T {
-    unsigned char byte_array[sizeof(T)];
+
+//    unsigned char byte_array[sizeof(T)];
     auto data_size = GetSizeOfInput(input);
     encryption_state->InitializeEncryption(iv, 16, &key_t);
 
+//    data_ptr_t val = static_cast<unsigned char*>(&input);
     // Convert input to byte array for processing
-    memcpy(byte_array, &input, sizeof(T));
+//    memcpy(byte_array, &input, sizeof(T));
+//
+//    auto input_data = data_ptr_t(GetCharData(input));
 
     // Encrypt data
-    encryption_state->Process(byte_array, data_size, buffer_p, data_size);
-    T encrypted_data = ConvertCipherText<T>(result, buffer_p, data_size, byte_array);
+    encryption_state->Process(data_ptr_t(GetCharData(input)), data_size, buffer_p, data_size);
+    T encrypted_data = ConvertToCipherText<T>(result, buffer_p, data_size);
 
 #if 0
         D_ASSERT(CheckEncryption(printable_encrypted_data, buffer_p, size, reinterpret_cast<const_data_ptr_t>(name.GetData()), state) == 1);
@@ -257,16 +321,20 @@ void ExecuteDecryptExecutor(Vector &vector, Vector &result, idx_t size, Expressi
   iv[12] = iv[13] = iv[14] = iv[15] = 0x00;
 
   UnaryExecutor::Execute<T, T>(vector, result, size, [&](T input) -> T {
-    unsigned char byte_array[sizeof(T)];
-    auto data_size = GetSizeOfInput(input);
+    // TODO: IMPROVE THIS!!!!
+    // this can also be placed more upper
     encryption_state->InitializeDecryption(iv, 16, &key_t);
+    auto data_size = GetSizeOfInput(input);
+    const_data_ptr_t input_data = reinterpret_cast<const_data_ptr_t>(GetCharData(input));
 
-    // Convert input to byte array for processing
-    memcpy(byte_array, &input, sizeof(T));
+//    // Convert input to byte array for processing
+//    memcpy(buffer_p, &input, sizeof(T));
 
-    // Encrypt data
-    encryption_state->Process(byte_array, data_size, buffer_p, data_size);
-    T decrypted_data = ConvertCipherText<T>(result, buffer_p, data_size, byte_array);
+    // Decrypt data
+    encryption_state->Process(input_data, data_size, buffer_p, data_size);
+
+    // we don't need to give an input
+    T decrypted_data = ConvertToCipherText<T>(vector, buffer_p, data_size);
 
 #if 0
         D_ASSERT(CheckEncryption(printable_encrypted_data, buffer_p, size, reinterpret_cast<const_data_ptr_t>(name.GetData()), state) == 1);
