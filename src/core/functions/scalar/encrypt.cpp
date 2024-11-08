@@ -74,60 +74,6 @@ shared_ptr<EncryptionState> InitializeCryptoState(ExpressionState &state) {
   return encryption_state->CreateEncryptionState();
 }
 
-shared_ptr<EncryptionState> InitializeDecryption(ExpressionState &state) {
-
-  // For now, hardcode everything
-  const string key = TEST_KEY;
-  unsigned char iv[16];
-  memcpy((void *)iv, "12345678901", 16);
-  //
-  //  // TODO; construct nonce based on immutable ROW_ID + hash(col_name)
-  iv[12] = 0x00;
-  iv[13] = 0x00;
-  iv[14] = 0x00;
-  iv[15] = 0x00;
-
-  auto decryption_state = InitializeCryptoState(state);
-  decryption_state->InitializeDecryption(iv, 16, &key);
-
-  return decryption_state;
-}
-
-inline const uint8_t *DecryptValue(uint8_t *buffer, size_t size, ExpressionState &state) {
-
-  // Initialize Encryption
-  auto encryption_state = InitializeDecryption(state);
-  uint8_t decryption_buffer[MAX_BUFFER_SIZE];
-  uint8_t *temp_buf = decryption_buffer;
-
-  encryption_state->Process(buffer, size, temp_buf, size);
-
-  return temp_buf;
-}
-
-bool CheckEncryption(string_t printable_encrypted_data, uint8_t *buffer,
-                            size_t size, const uint8_t *value, ExpressionState &state){
-
-  // cast encrypted data to blob back and forth
-  // to check whether data will be lost with casting
-  auto unblobbed_data = Blob::ToBlob(printable_encrypted_data);
-  auto encrypted_unblobbed_data =
-      reinterpret_cast<const uint8_t *>(unblobbed_data.data());
-
-  if (memcmp(encrypted_unblobbed_data, buffer, size) != 0) {
-    throw InvalidInputException(
-        "Original Encrypted Data differs from Unblobbed Encrypted Data");
-  }
-
-  auto decrypted_data = DecryptValue(buffer, size, state);
-  if (memcmp(decrypted_data, value, size) != 0) {
-    throw InvalidInputException(
-        "Original Data differs from Decrypted Data");
-  }
-  return true;
-}
-
-
 template <typename T>
 typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
 EncryptValue(EncryptionState *encryption_state, Vector &result, T plaintext_data, uint8_t *buffer_p) {
@@ -183,99 +129,6 @@ DecryptValue(EncryptionState *encryption_state, Vector &result, T base64_data, u
   return decrypted_data;
 }
 
-// Template specialization for string_t
-template <typename T>
-typename std::enable_if<std::is_same<T, string_t>::value, const char*>::type
-CastFromBytes(Vector &vector, T *input_data, size_t data_size) {
-
-  // Decode Base64-encoded input into binary format
-  string_t input(reinterpret_cast<const char *>(input_data), data_size);
-  size_t base64_size = Blob::FromBase64Size(input);
-  string_t output = StringVector::EmptyString(vector, base64_size);
-
-  // Convert from base64 to blob, storing it back in buffer_p
-
-  // return the buffer just directly
-  return output.GetDataWriteable();
-}
-
-
-// Template specialization for integral and floating point types
-// in decrypt, we want to translate the encrypted values to a buffer
-template <typename T>
-typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value, const char*>::type
-ConvertFromBytes(Vector &vector, T *input_data, size_t data_size) {
-  T decrypted_data;
-  memcpy(&decrypted_data, input_data, sizeof(T));
-  return decrypted_data;
-}
-
-//template <typename T>
-//typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
-//ConvertFromCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
-//  T decrypted_data;
-//  memcpy(&decrypted_data, buffer_p, sizeof(T));
-//  return decrypted_data;
-//}
-//
-//template <typename T>
-//typename std::enable_if<std::is_same<T, string_t>::value, uint8_t *>::type
-//ConvertFromCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
-//
-//  string_t input(reinterpret_cast<const char *>(buffer_p), data_size);
-//  size_t base64_size = Blob::FromBase64Size(input);
-//
-//  // Convert From base64 to blob
-//  Blob::FromBase64(input, buffer_p, base64_size);
-//
-//  return buffer_p;
-//}
-
-// TODO: for decryption, convert a string to blob and then decrypt and then return string_t?
-//template <typename T>
-//typename std::enable_if<std::is_same<T, string_t>::value, T>::type
-//ConvertToCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
-//  //
-//  return string_t(reinterpret_cast<const char *>(buffer_p), data_size);
-//}
-
-// Catch-all for unsupported types
-template <typename T>
-typename std::enable_if<!std::is_integral<T>::value && !std::is_floating_point<T>::value && !std::is_same<T, string_t>::value, T>::type
-ConvertToCipherText(uint8_t *buffer_p, size_t data_size, const uint8_t *input_data) {
-  throw std::invalid_argument("Unsupported type for Encryption");
-}
-
-template <typename T>
-typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
-GetSizeOfInput(const T &input) {
-  // For numeric types, use sizeof(T) directly
-  return sizeof(T);
-}
-
-// Specialized template for string_t type
-template <typename T>
-typename std::enable_if<std::is_same<T, string_t>::value, size_t>::type
-GetSizeOfInput(const T &input) {
-  // For string_t, get actual string data size
-  return input.GetSize();
-}
-
-// General template for numeric types
-template <typename T>
-typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value, const char*>::type
-GetCharData(const T &input) {
-  return reinterpret_cast<const char*>(&input);
-}
-
-// Specialized template for string_t type
-template <typename T>
-typename std::enable_if<std::is_same<T, string_t>::value, const char*>::type
-GetCharData(const T &input) {
-  return input.GetData();
-}
-//---------------------------------------------------------------------------------------------
-
 
 template <typename T>
 void ExecuteEncryptExecutor(Vector &vector, Vector &result, idx_t size, ExpressionState &state, const string &key_t) {
@@ -293,11 +146,7 @@ void ExecuteEncryptExecutor(Vector &vector, Vector &result, idx_t size, Expressi
 
   UnaryExecutor::Execute<T, T>(vector, result, size, [&](T input) -> T {
     encryption_state->InitializeEncryption(iv, 16, &key_t);
-    T encrypted_data = EncryptValue<T>(encryption_state.get(), result, input, buffer_p);
-#if 0
-        D_ASSERT(CheckEncryption(printable_encrypted_data, buffer_p, size, reinterpret_cast<const_data_ptr_t>(name.GetData()), state) == 1);
-#endif
-    return encrypted_data;
+    return EncryptValue<T>(encryption_state.get(), result, input, buffer_p);;
   });
 }
 
@@ -338,14 +187,8 @@ void ExecuteDecryptExecutor(Vector &vector, Vector &result, idx_t size, Expressi
   iv[12] = iv[13] = iv[14] = iv[15] = 0x00;
 
   UnaryExecutor::Execute<T, T>(vector, result, size, [&](T input) -> T {
-    // TODO: IMPROVE THIS!!!!
-    // this can also be placed more upper
     encryption_state->InitializeDecryption(iv, 16, &key_t);
-    T decrypted_data = DecryptValue<T>(encryption_state.get(), result, input, buffer_p);
-#if 0
-        D_ASSERT(CheckEncryption(printable_encrypted_data, buffer_p, size, reinterpret_cast<const_data_ptr_t>(name.GetData()), state) == 1);
-#endif
-    return decrypted_data;
+    return DecryptValue<T>(encryption_state.get(), result, input, buffer_p);;
   });
 }
 
@@ -401,6 +244,7 @@ static void DecryptData(DataChunk &args, ExpressionState &state, Vector &result)
   ExecuteDecrypt(value_vector, result, args.size(), state, key_t);
 }
 
+
 ScalarFunctionSet GetEncryptionFunction() {
   ScalarFunctionSet set("encrypt");
 
@@ -409,9 +253,6 @@ ScalarFunctionSet GetEncryptionFunction() {
 
   set.AddFunction(ScalarFunction({LogicalTypeId::BIGINT, LogicalType::VARCHAR}, LogicalTypeId::BIGINT, EncryptData,
                                  EncryptFunctionData::EncryptBind));
-
-//  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::BLOB, EncryptData,
-//                                 EncryptFunctionData::EncryptBind));
 
   set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::VARCHAR, EncryptData,
                                  EncryptFunctionData::EncryptBind));
@@ -431,9 +272,6 @@ ScalarFunctionSet GetDecryptionFunction() {
 
   set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::VARCHAR, DecryptData,
                                  EncryptFunctionData::EncryptBind));
-
-//  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::BLOB, DecryptData,
-//                                 EncryptFunctionData::EncryptBind));
 
   return set;
 }
