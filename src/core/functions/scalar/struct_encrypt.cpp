@@ -426,7 +426,7 @@ static void EncryptDataStruct(DataChunk &args, ExpressionState &state, Vector &r
   auto &value_vector = *children[1];
 
   // do we need to put pointers in result.auxiliary
-  result.auiliary = &result_vector;
+  result.auxiliary = &result_vector;
 
   // just now execute encrypt per value
   ExecuteEncryptStruct(plaintext_vector, result, args.size(), state, key_t);
