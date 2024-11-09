@@ -24,7 +24,7 @@ set(EXTENSION_SOURCES src/simple_encryption_extension.cpp
         src/core/module.cpp
         src/core/types.cpp
         src/core/functions/scalar/encrypt.cpp
-        src/core/functions/scalar/struct_encrypt.cpp
+        src/core/functions/scalar/encrypt_to_etype.cpp
         src/core/functions/function_data/encrypt_function_data.cpp
         src/core/functions/cast/varchar_cast.cpp
         src/core/functions/table/encrypt_table.cpp

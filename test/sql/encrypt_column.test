@@ -6,13 +6,13 @@
 require simple_encryption
 
 statement ok
-CREATE TABLE test_encryption_1 AS SELECT 1 AS value FROM range(10);
+CREATE TABLE test_1 AS SELECT 1 AS value FROM range(10);
 
 statement ok
-ALTER TABLE test_encryption_1 ADD COLUMN encrypted_value VARCHAR;
+ALTER TABLE test_1 ADD COLUMN encrypted_value VARCHAR;
 
 statement ok
-UPDATE test_encryption_1 SET encrypted_value = encrypt(value);
+UPDATE test_1 SET encrypted_value = encrypt(value, '0123456789112345');
 
 statement ok
 CREATE TABLE rd_data AS
@@ -29,4 +29,4 @@ statement ok
 CREATE TABLE test_encryption_2 AS SELECT * FROM range(1, 11) AS value;
 
 statement ok
-SELECT encrypt(value) AS encrypted_value FROM test_encryption_2;
+SELECT encrypt(range, '0123456789112345') AS encrypted_value FROM test_encryption_2;

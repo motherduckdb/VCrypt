@@ -97,7 +97,7 @@ static void EncryptDataChunkStruct(DataChunk &args, ExpressionState &state, Vect
 ScalarFunctionSet GetEncryptionStructFunction() {
   ScalarFunctionSet set("encrypt_etypes");
 
-  set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::INTEGER}, EncryptionTypes::E_INT(), EncryptDataChunkStruct,
+  set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::VARCHAR}, EncryptionTypes::E_INT(), EncryptDataChunkStruct,
                                  EncryptFunctionData::EncryptBind));
 
   return set;

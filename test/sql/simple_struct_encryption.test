@@ -1,0 +1,27 @@
+# name: test/sql/simple_struct_encryption.test
+# description: test simple_struct_encryption extension
+# group: [simple_encryption]
+
+# Before we load the extension, this will fail
+statement error
+SELECT simple_encryption('Test');
+----
+Catalog Error: Scalar Function with name simple_encryption does not exist!
+
+# Require statement will ensure this test is run with this extension loaded
+require simple_encryption
+
+statement ok
+CREATE TABLE test_1 AS SELECT 1 AS value FROM range(10);
+
+statement ok
+SELECT encrypt_etypes(value, '0123456789112345') AS encrypted_value FROM test_1;
+
+statement ok
+ALTER TABLE test_1 ADD COLUMN encrypted_value VARCHAR;
+
+statement ok
+UPDATE test_1 SET encrypted_value = encrypt_etypes(value, '0123456789112345');
+
+query I
+SELECT encrypt_etypes(11111, '0123456789112345');
