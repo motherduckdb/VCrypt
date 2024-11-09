@@ -23,37 +23,7 @@
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 
 namespace simple_encryption {
-
 namespace core {
-
-SimpleEncryptKeys &SimpleEncryptKeys::Get(ClientContext &context) {
-  auto &cache = ObjectCache::GetObjectCache(context);
-  if (!cache.Get<SimpleEncryptKeys>(SimpleEncryptKeys::ObjectType())) {
-    cache.Put(SimpleEncryptKeys::ObjectType(), make_shared_ptr<SimpleEncryptKeys>());
-  }
-  return *cache.Get<SimpleEncryptKeys>(SimpleEncryptKeys::ObjectType());
-}
-
-void SimpleEncryptKeys::AddKey(const string &key_name, const string &key) {
-  keys[key_name] = key;
-}
-
-bool SimpleEncryptKeys::HasKey(const string &key_name) const {
-  return keys.find(key_name) != keys.end();
-}
-
-const string &SimpleEncryptKeys::GetKey(const string &key_name) const {
-  D_ASSERT(HasKey(key_name));
-  return keys.at(key_name);
-}
-
-string SimpleEncryptKeys::ObjectType() {
-  return "simple_encrypt_keys";
-}
-
-string SimpleEncryptKeys::GetObjectType() {
-  return ObjectType();
-}
 
 shared_ptr<EncryptionUtil> GetEncryptionUtil(ExpressionState &state) {
   auto &func_expr = (BoundFunctionExpression &)state.expr;
@@ -68,7 +38,7 @@ shared_ptr<EncryptionState> InitializeCryptoState(ExpressionState &state) {
 
   if (!encryption_state) {
     return duckdb_mbedtls::MbedTlsWrapper::AESGCMStateMBEDTLSFactory()
-                   .CreateEncryptionState();
+        .CreateEncryptionState();
   }
 
   return encryption_state->CreateEncryptionState();

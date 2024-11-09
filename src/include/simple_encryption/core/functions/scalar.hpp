@@ -9,11 +9,12 @@ namespace core {
 struct CoreScalarFunctions {
   static void Register(duckdb::DatabaseInstance &db) {
     RegisterEncryptDataScalarFunction(db);
+    RegisterEncryptDataStructScalarFunction(db);
   }
 
 private:
   static void RegisterEncryptDataScalarFunction(duckdb::DatabaseInstance &db);
-  static void RegisterDecryptDataScalarFunction(duckdb::DatabaseInstance &db);
+  static void RegisterEncryptDataStructScalarFunction(duckdb::DatabaseInstance &db);
 };
 
 

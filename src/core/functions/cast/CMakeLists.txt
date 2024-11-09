@@ -1,0 +1,5 @@
+set(EXTENSION_SOURCES
+        ${EXTENSION_SOURCES}
+        ${CMAKE_CURRENT_SOURCE_DIR}/varchar_cast.cpp
+        PARENT_SCOPE
+)
