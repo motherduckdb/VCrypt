@@ -18,10 +18,16 @@ statement ok
 SELECT encrypt_etypes(value, '0123456789112345') AS encrypted_value FROM test_1;
 
 statement ok
-ALTER TABLE test_1 ADD COLUMN encrypted_value VARCHAR;
+ALTER TABLE test_1 ADD COLUMN encrypted_value STRUCT(nonce INTEGER, value INTEGER);
+
+statement ok
+ALTER TABLE test_1 ADD COLUMN encrypted_value_var VARCHAR(nonce INTEGER, value INTEGER);
 
 statement ok
 UPDATE test_1 SET encrypted_value = encrypt_etypes(value, '0123456789112345');
+
+statement ok
+UPDATE test_1 SET encrypted_value_var = encrypt_etypes(value, '0123456789112345');
 
 query I
 SELECT encrypt_etypes(11111, '0123456789112345');
