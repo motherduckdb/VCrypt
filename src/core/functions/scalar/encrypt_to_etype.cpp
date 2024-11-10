@@ -47,6 +47,7 @@ static void EncryptDataChunkStruct(DataChunk &args, ExpressionState &state, Vect
 
   auto &input_vector = args.data[0];
   auto &key_vector = args.data[1];
+
   D_ASSERT(key_vector.GetVectorType() == VectorType::CONSTANT_VECTOR);
 
   // Fetch the encryption key as a constant string
@@ -61,10 +62,10 @@ static void EncryptDataChunkStruct(DataChunk &args, ExpressionState &state, Vect
   // reset the reference of the result vector
   result.ReferenceAndSetType(struct_vector);
 
-  // Get the child vectors from the struct vector
-  auto &children = StructVector::GetEntries(result);
-  children[0] = make_uniq<Vector>(LogicalType::INTEGER);
-  children[1] = make_uniq<Vector>(LogicalType::INTEGER);
+//  // Get the child vectors from the struct vector
+//  auto &children = StructVector::GetEntries(result);
+//  children[0] = make_uniq<Vector>(LogicalType::INTEGER);
+//  children[1] = make_uniq<Vector>(LogicalType::INTEGER);
 
   // TODO: put this in the state of the extension
   uint8_t encryption_buffer[MAX_BUFFER_SIZE];
@@ -72,7 +73,9 @@ static void EncryptDataChunkStruct(DataChunk &args, ExpressionState &state, Vect
 
   unsigned char iv[16];
   auto encryption_state = simple_encryption_state->encryption_state;
-  auto nonce_count = 0;
+
+  // this can be an int64_t, we have 12 bytes available...
+  int32_t nonce_count = 0;
 
   // TODO: construct nonce based on immutable ROW_ID + hash(col_name)
   memcpy(iv, "12345678901", 12);
@@ -80,16 +83,79 @@ static void EncryptDataChunkStruct(DataChunk &args, ExpressionState &state, Vect
 
   encryption_state->InitializeEncryption(iv, 16, &key_t);
 
+  // this can be templated: StructTypeBinary<int32_t, T>;
+  // PLAINTEXT_TYPE = PrimitiveType<T>;
   using ENCRYPTED_TYPE = StructTypeBinary<int32_t, int32_t>;
   using PLAINTEXT_TYPE = PrimitiveType<int32_t>;
 
   GenericExecutor::ExecuteUnary<PLAINTEXT_TYPE, ENCRYPTED_TYPE>(input_vector, result, args.size(), [&](PLAINTEXT_TYPE input) {
-    // TODO: set nonce
+
+    // set the nonce
+    nonce_count++;
+    memcpy(iv, &nonce_count, sizeof(int32_t));
+
+    // Encrypt data
     int32_t encrypted_data;
     encryption_state->Process(reinterpret_cast<unsigned char*>(&input), sizeof(int32_t), reinterpret_cast<unsigned char*>(&encrypted_data), sizeof(int32_t));
-    int32_t nonce = 1;
-    // Example encrypted value
-    return ENCRYPTED_TYPE {nonce, encrypted_data};
+
+    return ENCRYPTED_TYPE {nonce_count, encrypted_data};
+  });
+}
+
+static void DecryptDataChunkStruct(DataChunk &args, ExpressionState &state, Vector &result) {
+
+  auto &func_expr = (BoundFunctionExpression &)state.expr;
+  auto &info = (EncryptFunctionData &)*func_expr.bind_info;
+
+  // refactor this into GetSimpleEncryptionState(info.context);
+  auto simple_encryption_state =
+      info.context.registered_state->Get<SimpleEncryptionState>(
+          "simple_encryption");
+
+  auto &input_vector = args.data[0];
+  // D_assert to check whether it is a struct?
+//  D_ASSERT(input_vector.GetType() == LogicalType::STRUCT);
+  // get children of input data
+  auto &children = StructVector::GetEntries(input_vector);
+  auto &nonce_vector = children[0];
+  auto &value_vector = children[1];
+
+  auto &key_vector = args.data[1];
+  D_ASSERT(key_vector.GetVectorType() == VectorType::CONSTANT_VECTOR);
+
+  // Fetch the encryption key as a constant string
+  const string key_t =
+      ConstantVector::GetData<string_t>(key_vector)[0].GetString();
+
+  // maybe convert vector to unified format? Like they do in other scalar fucntions
+
+  // TODO: put this in the state of the extension
+  uint8_t encryption_buffer[MAX_BUFFER_SIZE];
+  uint8_t *buffer_p = encryption_buffer;
+
+  unsigned char iv[16];
+  auto encryption_state = simple_encryption_state->encryption_state;
+
+  // TODO: construct nonce based on immutable ROW_ID + hash(col_name)
+  memcpy(iv, "12345678901", 12);
+  iv[12] = iv[13] = iv[14] = iv[15] = 0x00;
+
+  encryption_state->InitializeDecryption(iv, 16, &key_t);
+  // Decrypt data
+  int32_t decrypted_data;
+
+  // also, template this function
+  BinaryExecutor::Execute<int32_t, int32_t, int32_t>(
+      reinterpret_cast<Vector &>(nonce_vector),
+      reinterpret_cast<Vector &>(value_vector), result, args.size(),
+                                                                          [&](int32_t nonce, int32_t input) {
+    // Set the nonce
+    memcpy(iv, &nonce, sizeof(int32_t));
+
+    // Decrypt data
+    encryption_state->Process(reinterpret_cast<unsigned char*>(&input), sizeof(int32_t), reinterpret_cast<unsigned char*>(&decrypted_data), sizeof(int32_t));
+
+    return decrypted_data;
   });
 }
 
@@ -103,6 +169,17 @@ ScalarFunctionSet GetEncryptionStructFunction() {
   return set;
 }
 
+ScalarFunctionSet GetDecryptionStructFunction() {
+  ScalarFunctionSet set("decrypt_etypes");
+
+  set.AddFunction(ScalarFunction({EncryptionTypes::E_INT(), LogicalType::VARCHAR}, LogicalTypeId::INTEGER, DecryptDataChunkStruct,
+                                 EncryptFunctionData::EncryptBind));
+
+  return set;
+}
+
+
+
 //------------------------------------------------------------------------------
 // Register functions
 //------------------------------------------------------------------------------
@@ -110,6 +187,7 @@ ScalarFunctionSet GetEncryptionStructFunction() {
 void CoreScalarFunctions::RegisterEncryptDataStructScalarFunction(
     DatabaseInstance &db) {
   ExtensionUtil::RegisterFunction(db, GetEncryptionStructFunction());
+  ExtensionUtil::RegisterFunction(db, GetDecryptionStructFunction());
 }
 }
 }
