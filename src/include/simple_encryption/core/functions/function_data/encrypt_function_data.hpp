@@ -10,6 +10,7 @@ struct EncryptFunctionData: FunctionData {
 
   // Save the ClientContext
   ClientContext &context;
+//  BoundStatement relation;
 
   EncryptFunctionData(ClientContext &context)
       : context(context) {}
