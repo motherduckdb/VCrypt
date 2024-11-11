@@ -12,22 +12,50 @@ Catalog Error: Scalar Function with name simple_encryption does not exist!
 require simple_encryption
 
 statement ok
+SELECT encrypt_etypes(11, '0123456789112345');
+
+query I
+SELECT decrypt_etypes({'nonce': 1, 'value': 1959677685}, '0123456789112345');
+----
+11
+
+statement ok
 CREATE TABLE test_1 AS SELECT 1 AS value FROM range(10);
 
 statement ok
 SELECT encrypt_etypes(value, '0123456789112345') AS encrypted_value FROM test_1;
 
 statement ok
-ALTER TABLE test_1 ADD COLUMN encrypted_value STRUCT(nonce INTEGER, value INTEGER);
+ALTER TABLE test_1 ADD COLUMN encrypted_values STRUCT(nonce INTEGER, value INTEGER);
 
 statement ok
-ALTER TABLE test_1 ADD COLUMN encrypted_value_var VARCHAR(nonce INTEGER, value INTEGER);
+ALTER TABLE test_1 ADD COLUMN decrypted_values INTEGER;
 
 statement ok
-UPDATE test_1 SET encrypted_value = encrypt_etypes(value, '0123456789112345');
+UPDATE test_1 SET encrypted_values = encrypt_etypes(value, '0123456789112345');
 
 statement ok
-UPDATE test_1 SET encrypted_value_var = encrypt_etypes(value, '0123456789112345');
+UPDATE test_1 SET decrypted_values = decrypt_etypes(encrypted_values, '0123456789112345');
 
 query I
-SELECT encrypt_etypes(11111, '0123456789112345');
+SELECT decrypted_values FROM test_1;
+----
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+
+#statement ok
+#ALTER TABLE test_1 ADD COLUMN decrypted_value_struct INTEGER;
+#
+#statement ok
+#UPDATE test_1 SET decrypted_value_struct = decrypt_etypes(encrypted_value, '0123456789112345');
+#
+#query I
+#SELECT encrypt_etypes(11111, '0123456789112345');
