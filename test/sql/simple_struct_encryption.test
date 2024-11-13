@@ -15,9 +15,9 @@ statement ok
 SELECT encrypt_etypes(11, '0123456789112345');
 
 query I
-SELECT decrypt_etypes({'prefix': 'xxxxxxxx', 'id': 1, 'value': 1959677685}, '0123456789112345');
+SELECT decrypt_etypes({'nonce_hi': 11752579000357969348, 'nonce_lo': 2472254480, 'value': 1288890}, '0123456789112345');
 ----
-1850169411
+446348300
 
 statement ok
 CREATE TABLE test_1 AS SELECT 1 AS value FROM range(10);
@@ -26,7 +26,7 @@ statement ok
 SELECT encrypt_etypes(value, '0123456789112345') AS encrypted_value FROM test_1;
 
 statement ok
-ALTER TABLE test_1 ADD COLUMN encrypted_values STRUCT(nonce INTEGER, value INTEGER);
+ALTER TABLE test_1 ADD COLUMN encrypted_values STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, value INTEGER);
 
 statement ok
 ALTER TABLE test_1 ADD COLUMN decrypted_values INTEGER;
