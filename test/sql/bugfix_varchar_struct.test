@@ -1,0 +1,12 @@
+# name: test/sql/bugfix_varchar_struct.test
+# description: test simple_struct_encryption extension
+# group: [simple_encryption]
+
+# Require statement will ensure this test is run with this extension loaded
+require simple_encryption
+
+statement ok
+CREATE TABLE test_varchar AS SELECT CAST('hello' AS VARCHAR) AS value FROM range(1);
+
+statement ok
+SELECT encrypt_etypes(value, '0123456789112345') AS encrypted_value FROM test_varchar;
