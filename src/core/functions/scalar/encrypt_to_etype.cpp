@@ -28,11 +28,9 @@ namespace simple_encryption {
 
 namespace core {
 
-
 template <typename T>
 typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
 ProcessAndCastEncrypt(shared_ptr<EncryptionState> encryption_state, Vector &result, T plaintext_data, uint8_t *buffer_p) {
-  // actually, you can just for process already give the pointer to the result, thus skip buffer
   T encrypted_data;
   encryption_state->Process(reinterpret_cast<unsigned char*>(&plaintext_data), sizeof(int32_t), reinterpret_cast<unsigned char*>(&encrypted_data), sizeof(int32_t));
   return encrypted_data;
@@ -84,23 +82,26 @@ ProcessAndCastDecrypt(shared_ptr<EncryptionState> encryption_state, Vector &resu
 template <typename T>
 typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
 ProcessAndCastDecrypt(shared_ptr<EncryptionState> encryption_state, Vector &result, T encrypted_data, uint8_t *buffer_p) {
-  // actually, you can just for process already give the pointer to the result, thus skip buffer
   T decrypted_data;
   encryption_state->Process(reinterpret_cast<unsigned char*>(&encrypted_data), sizeof(T), reinterpret_cast<unsigned char*>(&decrypted_data), sizeof(T));
   return decrypted_data;
 }
 
-shared_ptr<EncryptionState> GetEncryptionState(ExpressionState &state){
+shared_ptr<SimpleEncryptionState> GetSimpleEncryptionState(ExpressionState &state){
 
   auto &func_expr = (BoundFunctionExpression &)state.expr;
   auto &info = (EncryptFunctionData &)*func_expr.bind_info;
 
-  // refactor this into GetSimpleEncryptionState(info.context);
   auto simple_encryption_state =
       info.context.registered_state->Get<SimpleEncryptionState>(
           "simple_encryption");
 
-  return simple_encryption_state->encryption_state;
+  return simple_encryption_state;
+
+}
+
+shared_ptr<EncryptionState> GetEncryptionState(ExpressionState &state){
+  return GetSimpleEncryptionState(state)->encryption_state;
 
 }
 
@@ -121,6 +122,7 @@ LogicalType CreateEVARtypeStruct() {
 template <typename T>
 void EncryptToEtype(LogicalType result_struct, Vector &input_vector, const string key_t, uint64_t size, ExpressionState &state, Vector &result){
 
+  auto simple_encryption_state = GetSimpleEncryptionState(state);
   // Reset the reference of the result vector
   Vector struct_vector(result_struct, size);
   result.ReferenceAndSetType(struct_vector);
@@ -132,19 +134,16 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector, const strin
   nonce_hi->SetVectorType(VectorType::CONSTANT_VECTOR);
   nonce_lo->SetVectorType(VectorType::FLAT_VECTOR);
 
+  auto encryption_state = GetEncryptionState(state);
+
   // For every bulk insert we generate a new initialization vector
   uint64_t iv[2];
-  auto encryption_state = GetEncryptionState(state);
   iv[0] = iv[1] = 0;
-  encryption_state->GenerateRandomData(reinterpret_cast<unsigned char*>(iv), 12);
-
-  // Initialize encryption state
-  encryption_state->InitializeEncryption(reinterpret_cast<unsigned char*>(iv), 16, reinterpret_cast<const string *>(&key_t));
+  encryption_state->GenerateRandomData(reinterpret_cast<data_ptr_t>(iv), 12);
 
   using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
   using PLAINTEXT_TYPE = PrimitiveType<T>;
 
-  // TODO: put this in the state of the extension
   uint8_t encryption_buffer[MAX_BUFFER_SIZE];
   uint8_t *buffer_p = encryption_buffer;
 
@@ -152,7 +151,11 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector, const strin
 
     // increment the low part of the nonce
     iv[1]++;
-    T encrypted_data = ProcessAndCastEncrypt(encryption_state, result, input.val, buffer_p);
+
+    encryption_state->InitializeEncryption(
+        reinterpret_cast<const_data_ptr_t>(iv), 16, reinterpret_cast<const string *>(&key_t));
+
+    T encrypted_data = ProcessAndCastEncrypt(encryption_state, result, input.val, simple_encryption_state->buffer_p);
 
     return ENCRYPTED_TYPE {iv[0], iv[1], encrypted_data};
   });
@@ -161,14 +164,7 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector, const strin
 template <typename T>
 void DecryptFromEtype(Vector &input_vector, const string key_t, uint64_t size, ExpressionState &state, Vector &result){
 
-  // TODO: put this in the state of the extension
-  // Create encryption buffer
-  uint8_t encryption_buffer[MAX_BUFFER_SIZE];
-  uint8_t *buffer_p = encryption_buffer;
-
- uint64_t iv[2];
- iv[0] = iv[1] = 0;
- uint64_t nonce_hi = 0;
+  auto simple_encryption_state = GetSimpleEncryptionState(state);
 
   // check if nonce is repeated for the data chunk
   // get children of the struct to calculate nonce
@@ -179,18 +175,25 @@ void DecryptFromEtype(Vector &input_vector, const string key_t, uint64_t size, E
   //   memcpy(iv, &nonce_hi, 8);
   // }
 
- auto encryption_state = GetEncryptionState(state);
- encryption_state->InitializeDecryption(reinterpret_cast<const_data_ptr_t>(iv), 16, &key_t);
+  uint64_t iv[2];
+  iv[0] = iv[1] = 0;
 
- using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
- using PLAINTEXT_TYPE = PrimitiveType<T>;
+  auto encryption_state = GetEncryptionState(state);
+
+  using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
+  using PLAINTEXT_TYPE = PrimitiveType<T>;
 
  GenericExecutor::ExecuteUnary<ENCRYPTED_TYPE, PLAINTEXT_TYPE>(input_vector, result, size, [&](ENCRYPTED_TYPE input) {
 
-       memcpy(iv, &input.a_val, 8);
-       memcpy(iv + 1, &input.b_val, 8);
+      iv[0] = input.a_val;
+      iv[1] = input.b_val;
 
-       T decrypted_data = ProcessAndCastDecrypt(encryption_state, result, input.c_val, buffer_p);
+      // maybe reset the decryption state
+
+       encryption_state->InitializeDecryption(
+           reinterpret_cast<const_data_ptr_t>(iv), 16, &key_t);
+
+       T decrypted_data = ProcessAndCastDecrypt(encryption_state, result, input.c_val, simple_encryption_state->buffer_p);
        return decrypted_data;
      });
 }
@@ -242,14 +245,6 @@ static void EncryptDataToEtype(DataChunk &args, ExpressionState &state, Vector &
 }
 
 static void DecryptDataFromEtype(DataChunk &args, ExpressionState &state, Vector &result) {
-
-  auto &func_expr = (BoundFunctionExpression &)state.expr;
-  auto &info = (EncryptFunctionData &)*func_expr.bind_info;
-
-  // refactor this into GetSimpleEncryptionState(info.context);
-  auto simple_encryption_state =
-      info.context.registered_state->Get<SimpleEncryptionState>(
-          "simple_encryption");
 
   auto size = args.size();
   auto &input_vector = args.data[0];
