@@ -1,7 +1,7 @@
+#define MAX_BUFFER_SIZE 1024
 #include "include/simple_encryption_state.hpp"
 #include "duckdb.hpp"
 #include "mbedtls_wrapper.hpp"
-
 
 namespace duckdb {
 
@@ -26,6 +26,10 @@ SimpleEncryptionState::SimpleEncryptionState(shared_ptr<ClientContext> context)
 
   // set pointer to encryption primitives (mbedtls or openssl)
   encryption_state = GetEncryptionUtil(*new_conn)->CreateEncryptionState();
+
+  // allocate encryption buffer
+  uint8_t encryption_buffer[MAX_BUFFER_SIZE];
+  buffer_p = encryption_buffer;
 
   // Create a new table containing encryption metadata (nonce, tag)
   auto query = new_conn->Query("CREATE TABLE IF NOT EXISTS __simple_encryption_internal ("

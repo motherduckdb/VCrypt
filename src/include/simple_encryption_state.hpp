@@ -14,6 +14,7 @@ public:
 public:
   shared_ptr<ClientContext> context_p;
   shared_ptr<EncryptionState> encryption_state;
+  uint8_t *buffer_p;
 };
 
 } // namespace duckdb
