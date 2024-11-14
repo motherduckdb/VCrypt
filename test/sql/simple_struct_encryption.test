@@ -58,7 +58,7 @@ statement ok
 SELECT encrypt_etypes(value, '0123456789112345') AS encrypted_value FROM test_varchar;
 
 statement ok
-ALTER TABLE test_varchar ADD COLUMN encrypted_values STRUCT(nonce INTEGER, value VARCHAR);
+ALTER TABLE test_varchar ADD COLUMN encrypted_values STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, value VARCHAR);
 
 statement ok
 ALTER TABLE test_varchar ADD COLUMN decrypted_values VARCHAR;
