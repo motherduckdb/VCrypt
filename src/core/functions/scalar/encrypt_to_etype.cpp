@@ -100,6 +100,18 @@ shared_ptr<SimpleEncryptionState> GetSimpleEncryptionState(ExpressionState &stat
 
 }
 
+bool HasSpace(shared_ptr<SimpleEncryptionState> simple_encryption_state, uint64_t size) {
+  uint32_t max_value = ~0u;
+  if ((max_value - simple_encryption_state->counter) > size){
+    return true;
+  }
+  return false;
+}
+
+void SetIV(shared_ptr<SimpleEncryptionState> simple_encryption_state) {
+  simple_encryption_state->encryption_state->GenerateRandomData(reinterpret_cast<data_ptr_t>(simple_encryption_state->iv), 12);
+}
+
 shared_ptr<EncryptionState> GetEncryptionState(ExpressionState &state){
   return GetSimpleEncryptionState(state)->encryption_state;
 
@@ -127,19 +139,13 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector, const strin
   Vector struct_vector(result_struct, size);
   result.ReferenceAndSetType(struct_vector);
 
-  // Set vector types
-  auto &children = StructVector::GetEntries(result);
-  auto &nonce_hi = children[0];
-  auto &nonce_lo = children[1];
-  nonce_hi->SetVectorType(VectorType::CONSTANT_VECTOR);
-  nonce_lo->SetVectorType(VectorType::FLAT_VECTOR);
-
   auto encryption_state = GetEncryptionState(state);
 
-  // For every bulk insert we generate a new initialization vector
-  uint64_t iv[2];
-  iv[0] = iv[1] = 0;
-  encryption_state->GenerateRandomData(reinterpret_cast<data_ptr_t>(iv), 12);
+  if (simple_encryption_state->counter == 0 || !HasSpace(simple_encryption_state, size)) {
+    // generate new random IV and reset counter
+    SetIV(simple_encryption_state);
+    simple_encryption_state->counter = 0;
+  }
 
   using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
   using PLAINTEXT_TYPE = PrimitiveType<T>;
@@ -150,14 +156,15 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector, const strin
   GenericExecutor::ExecuteUnary<PLAINTEXT_TYPE, ENCRYPTED_TYPE>(input_vector, result, size, [&](PLAINTEXT_TYPE input) {
 
     // increment the low part of the nonce
-    iv[1]++;
+    simple_encryption_state->iv[1]++;
+    simple_encryption_state->counter++;
 
     encryption_state->InitializeEncryption(
-        reinterpret_cast<const_data_ptr_t>(iv), 16, reinterpret_cast<const string *>(&key_t));
+        reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 16, reinterpret_cast<const string *>(&key_t));
 
     T encrypted_data = ProcessAndCastEncrypt(encryption_state, result, input.val, simple_encryption_state->buffer_p);
 
-    return ENCRYPTED_TYPE {iv[0], iv[1], encrypted_data};
+    return ENCRYPTED_TYPE {simple_encryption_state->iv[0], simple_encryption_state->iv[1], encrypted_data};
   });
 }
 
@@ -165,15 +172,6 @@ template <typename T>
 void DecryptFromEtype(Vector &input_vector, const string key_t, uint64_t size, ExpressionState &state, Vector &result){
 
   auto simple_encryption_state = GetSimpleEncryptionState(state);
-
-  // check if nonce is repeated for the data chunk
-  // get children of the struct to calculate nonce
-  // auto &children = StructVector::GetEntries(input_vector);
-  // auto &nonce_hi_vector = children[0];
-  // if (nonce_hi_vector->GetVectorType() == VectorType::CONSTANT_VECTOR) {
-  //   nonce_hi = ConstantVector::GetData<uint64_t>(*nonce_hi_vector)[0];
-  //   memcpy(iv, &nonce_hi, 8);
-  // }
 
   uint64_t iv[2];
   iv[0] = iv[1] = 0;
@@ -187,8 +185,6 @@ void DecryptFromEtype(Vector &input_vector, const string key_t, uint64_t size, E
 
       iv[0] = input.a_val;
       iv[1] = input.b_val;
-
-      // maybe reset the decryption state
 
        encryption_state->InitializeDecryption(
            reinterpret_cast<const_data_ptr_t>(iv), 16, &key_t);
