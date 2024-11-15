@@ -18,38 +18,36 @@ namespace duckdb {
 
 static void LoadInternal(DatabaseInstance &instance) {
 
-    // register functions in the core module
-    simple_encryption::core::CoreModule::Register(instance);
+  // register functions in the core module
+  simple_encryption::core::CoreModule::Register(instance);
 
-    // Register the SimpleEncryptionState for all connections
-    auto &config = DBConfig::GetConfig(instance);
+  // Register the SimpleEncryptionState for all connections
+  auto &config = DBConfig::GetConfig(instance);
 
-    // set pointer to OpenSSL encryption state
-    config.encryption_util = make_shared_ptr<AESStateSSLFactory>();
+  // set pointer to OpenSSL encryption state
+  config.encryption_util = make_shared_ptr<AESStateSSLFactory>();
 
-    // Add extension callback
-    config.extension_callbacks.push_back(make_uniq<SimpleEncryptionExtensionCallback>());
+  // Add extension callback
+  config.extension_callbacks.push_back(
+      make_uniq<SimpleEncryptionExtensionCallback>());
 
-    // Register the SimpleEncryptionState for all connections
-    for (auto &connection : ConnectionManager::Get(instance).GetConnectionList()) {
-      connection->registered_state->Insert(
-          "simple_encryption",
-          make_shared_ptr<SimpleEncryptionState>(connection));
-    }
+  // Register the SimpleEncryptionState for all connections
+  for (auto &connection :
+       ConnectionManager::Get(instance).GetConnectionList()) {
+    connection->registered_state->Insert(
+        "simple_encryption",
+        make_shared_ptr<SimpleEncryptionState>(connection));
+  }
 }
 
-void SimpleEncryptionExtension::Load(DuckDB &db) {
-	LoadInternal(*db.instance);
-}
-std::string SimpleEncryptionExtension::Name() {
-	return "simple_encryption";
-}
+void SimpleEncryptionExtension::Load(DuckDB &db) { LoadInternal(*db.instance); }
+std::string SimpleEncryptionExtension::Name() { return "simple_encryption"; }
 
 std::string SimpleEncryptionExtension::Version() const {
 #ifdef EXT_VERSION_SIMPLE_ENCRYPTION
-	return EXT_VERSION_SIMPLE_ENCRYPTION;
+  return EXT_VERSION_SIMPLE_ENCRYPTION;
 #else
-	return "V0.0.1";
+  return "V0.0.1";
 #endif
 }
 
@@ -57,14 +55,14 @@ std::string SimpleEncryptionExtension::Version() const {
 
 extern "C" {
 
-  DUCKDB_EXTENSION_API void simple_encryption_init(duckdb::DatabaseInstance &db) {
-      duckdb::DuckDB db_wrapper(db);
-      db_wrapper.LoadExtension<duckdb::SimpleEncryptionExtension>();
-  }
+DUCKDB_EXTENSION_API void simple_encryption_init(duckdb::DatabaseInstance &db) {
+  duckdb::DuckDB db_wrapper(db);
+  db_wrapper.LoadExtension<duckdb::SimpleEncryptionExtension>();
+}
 
-  DUCKDB_EXTENSION_API const char *simple_encryption_version() {
-          return duckdb::DuckDB::LibraryVersion();
-  }
+DUCKDB_EXTENSION_API const char *simple_encryption_version() {
+  return duckdb::DuckDB::LibraryVersion();
+}
 }
 
 #ifndef DUCKDB_EXTENSION_MAIN

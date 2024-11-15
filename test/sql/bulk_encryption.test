@@ -1,0 +1,39 @@
+# name: test/sql/bulk_encryption.test
+# description: test simple__encryption extension
+# group: [simple_encryption]
+
+# Require statement will ensure this test is run with this extension loaded
+require simple_encryption
+
+# So, when we do  more then 2048 values (i.e. vector size) it crashes
+statement ok
+CREATE TABLE test_1 AS SELECT 1 AS value FROM range(2048);
+
+statement ok
+SELECT encrypt(value, '0123456789112345') AS encrypted_value FROM test_1;
+
+statement ok
+ALTER TABLE test_1 ADD COLUMN encrypted_values STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, value INTEGER);
+
+statement ok
+ALTER TABLE test_1 ADD COLUMN decrypted_values INTEGER;
+
+statement ok
+UPDATE test_1 SET encrypted_values = encrypt(value, '0123456789112345');
+
+statement ok
+UPDATE test_1 SET decrypted_values = decrypt(encrypted_values, '0123456789112345');
+
+query I
+SELECT decrypted_values FROM test_1 LIMIT 10;
+----
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1

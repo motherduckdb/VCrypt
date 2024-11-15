@@ -45,27 +45,38 @@ shared_ptr<EncryptionState> InitializeCryptoState(ExpressionState &state) {
 }
 
 template <typename T>
-typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
-EncryptValue(EncryptionState *encryption_state, Vector &result, T plaintext_data, uint8_t *buffer_p) {
-  // actually, you can just for process already give the pointer to the result, thus skip buffer
+typename std::enable_if<
+    std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
+EncryptValue(EncryptionState *encryption_state, Vector &result,
+             T plaintext_data, uint8_t *buffer_p) {
+  // actually, you can just for process already give the pointer to the result,
+  // thus skip buffer
   T encrypted_data;
-  encryption_state->Process(reinterpret_cast<unsigned char*>(&plaintext_data), sizeof(T), reinterpret_cast<unsigned char*>(&encrypted_data), sizeof(T));
+  encryption_state->Process(
+      reinterpret_cast<unsigned char *>(&plaintext_data), sizeof(T),
+      reinterpret_cast<unsigned char *>(&encrypted_data), sizeof(T));
   return encrypted_data;
 }
 
 template <typename T>
-typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
-DecryptValue(EncryptionState *encryption_state, Vector &result, T encrypted_data, uint8_t *buffer_p) {
-  // actually, you can just for process already give the pointer to the result, thus skip buffer
+typename std::enable_if<
+    std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
+DecryptValue(EncryptionState *encryption_state, Vector &result,
+             T encrypted_data, uint8_t *buffer_p) {
+  // actually, you can just for process already give the pointer to the result,
+  // thus skip buffer
   T decrypted_data;
-  encryption_state->Process(reinterpret_cast<unsigned char*>(&encrypted_data), sizeof(T), reinterpret_cast<unsigned char*>(&decrypted_data), sizeof(T));
+  encryption_state->Process(
+      reinterpret_cast<unsigned char *>(&encrypted_data), sizeof(T),
+      reinterpret_cast<unsigned char *>(&decrypted_data), sizeof(T));
   return decrypted_data;
 }
 
 // Handle string_t type and convert to Base64
 template <typename T>
 typename std::enable_if<std::is_same<T, string_t>::value, T>::type
-EncryptValue(EncryptionState *encryption_state, Vector &result, T value, uint8_t *buffer_p) {
+EncryptValue(EncryptionState *encryption_state, Vector &result, T value,
+             uint8_t *buffer_p) {
 
   // first encrypt the bytes of the string into a temp buffer_p
   auto input_data = data_ptr_t(value.GetData());
@@ -73,7 +84,8 @@ EncryptValue(EncryptionState *encryption_state, Vector &result, T value, uint8_t
   encryption_state->Process(input_data, value_size, buffer_p, value_size);
 
   // Convert the encrypted data to Base64
-  auto encrypted_data = string_t(reinterpret_cast<const char*>(buffer_p), value_size);
+  auto encrypted_data =
+      string_t(reinterpret_cast<const char *>(buffer_p), value_size);
   size_t base64_size = Blob::ToBase64Size(encrypted_data);
 
   // convert to Base64 into a newly allocated string in the result vector
@@ -85,23 +97,28 @@ EncryptValue(EncryptionState *encryption_state, Vector &result, T value, uint8_t
 
 template <typename T>
 typename std::enable_if<std::is_same<T, string_t>::value, T>::type
-DecryptValue(EncryptionState *encryption_state, Vector &result, T base64_data, uint8_t *buffer_p) {
+DecryptValue(EncryptionState *encryption_state, Vector &result, T base64_data,
+             uint8_t *buffer_p) {
 
   // first encrypt the bytes of the string into a temp buffer_p
   size_t encrypted_size = Blob::FromBase64Size(base64_data);
   size_t decrypted_size = encrypted_size;
-  Blob::FromBase64(base64_data, reinterpret_cast<data_ptr_t>(buffer_p), encrypted_size);
+  Blob::FromBase64(base64_data, reinterpret_cast<data_ptr_t>(buffer_p),
+                   encrypted_size);
   D_ASSERT(encrypted_size <= base64_data.GetSize());
 
   string_t decrypted_data = StringVector::EmptyString(result, decrypted_size);
-  encryption_state->Process(buffer_p, encrypted_size, reinterpret_cast<unsigned char*>(decrypted_data.GetDataWriteable()), decrypted_size);
+  encryption_state->Process(
+      buffer_p, encrypted_size,
+      reinterpret_cast<unsigned char *>(decrypted_data.GetDataWriteable()),
+      decrypted_size);
 
   return decrypted_data;
 }
 
-
 template <typename T>
-void ExecuteEncryptExecutor(Vector &vector, Vector &result, idx_t size, ExpressionState &state, const string &key_t) {
+void ExecuteEncryptExecutor(Vector &vector, Vector &result, idx_t size,
+                            ExpressionState &state, const string &key_t) {
 
   // TODO: put this in the state of the extension
   uint8_t encryption_buffer[MAX_BUFFER_SIZE];
@@ -116,15 +133,18 @@ void ExecuteEncryptExecutor(Vector &vector, Vector &result, idx_t size, Expressi
 
   UnaryExecutor::Execute<T, T>(vector, result, size, [&](T input) -> T {
     encryption_state->InitializeEncryption(iv, 16, &key_t);
-    return EncryptValue<T>(encryption_state.get(), result, input, buffer_p);;
+    return EncryptValue<T>(encryption_state.get(), result, input, buffer_p);
+    ;
   });
 }
 
 // Generated code
 //---------------------------------------------------------------------------------------------
 
-// Helper function that dispatches the runtime type to the appropriate templated function
-void ExecuteEncrypt(Vector &vector, Vector &result, idx_t size, ExpressionState &state, const string &key_t) {
+// Helper function that dispatches the runtime type to the appropriate templated
+// function
+void ExecuteEncrypt(Vector &vector, Vector &result, idx_t size,
+                    ExpressionState &state, const string &key_t) {
   // Check the vector type and call the correct templated version
   switch (vector.GetType().id()) {
   case LogicalTypeId::INTEGER:
@@ -143,7 +163,8 @@ void ExecuteEncrypt(Vector &vector, Vector &result, idx_t size, ExpressionState 
 //---------------------------------------------------------------------------------------------
 
 template <typename T>
-void ExecuteDecryptExecutor(Vector &vector, Vector &result, idx_t size, ExpressionState &state, const string &key_t) {
+void ExecuteDecryptExecutor(Vector &vector, Vector &result, idx_t size,
+                            ExpressionState &state, const string &key_t) {
 
   // TODO: put this in the state of the extension
   uint8_t encryption_buffer[MAX_BUFFER_SIZE];
@@ -158,15 +179,18 @@ void ExecuteDecryptExecutor(Vector &vector, Vector &result, idx_t size, Expressi
 
   UnaryExecutor::Execute<T, T>(vector, result, size, [&](T input) -> T {
     encryption_state->InitializeDecryption(iv, 16, &key_t);
-    return DecryptValue<T>(encryption_state.get(), result, input, buffer_p);;
+    return DecryptValue<T>(encryption_state.get(), result, input, buffer_p);
+    ;
   });
 }
 
 // Generated code
 //---------------------------------------------------------------------------------------------
 
-// Helper function that dispatches the runtime type to the appropriate templated function
-void ExecuteDecrypt(Vector &vector, Vector &result, idx_t size, ExpressionState &state, const string &key_t) {
+// Helper function that dispatches the runtime type to the appropriate templated
+// function
+void ExecuteDecrypt(Vector &vector, Vector &result, idx_t size,
+                    ExpressionState &state, const string &key_t) {
   // Check the vector type and call the correct templated version
   switch (vector.GetType().id()) {
   case LogicalTypeId::INTEGER:
@@ -184,7 +208,8 @@ void ExecuteDecrypt(Vector &vector, Vector &result, idx_t size, ExpressionState 
 }
 //---------------------------------------------------------------------------------------------
 
-static void EncryptData(DataChunk &args, ExpressionState &state, Vector &result) {
+static void EncryptData(DataChunk &args, ExpressionState &state,
+                        Vector &result) {
 
   auto &value_vector = args.data[0];
 
@@ -193,13 +218,15 @@ static void EncryptData(DataChunk &args, ExpressionState &state, Vector &result)
   D_ASSERT(key_vector.GetVectorType() == VectorType::CONSTANT_VECTOR);
 
   // Fetch the encryption key as a constant string
-  const string key_t = ConstantVector::GetData<string_t>(key_vector)[0].GetString();
+  const string key_t =
+      ConstantVector::GetData<string_t>(key_vector)[0].GetString();
 
   // can we not pass by reference?
   ExecuteEncrypt(value_vector, result, args.size(), state, key_t);
 }
 
-static void DecryptData(DataChunk &args, ExpressionState &state, Vector &result) {
+static void DecryptData(DataChunk &args, ExpressionState &state,
+                        Vector &result) {
 
   auto &value_vector = args.data[0];
 
@@ -208,39 +235,45 @@ static void DecryptData(DataChunk &args, ExpressionState &state, Vector &result)
   D_ASSERT(key_vector.GetVectorType() == VectorType::CONSTANT_VECTOR);
 
   // Fetch the encryption key as a constant string
-  const string key_t = ConstantVector::GetData<string_t>(key_vector)[0].GetString();
+  const string key_t =
+      ConstantVector::GetData<string_t>(key_vector)[0].GetString();
 
   // can we not pass by reference?
   ExecuteDecrypt(value_vector, result, args.size(), state, key_t);
 }
 
-
 ScalarFunctionSet GetEncryptionFunction() {
-  ScalarFunctionSet set("encrypt");
+  ScalarFunctionSet set("encrypt_simple");
 
-  set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::VARCHAR}, LogicalTypeId::INTEGER, EncryptData,
+  set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::VARCHAR},
+                                 LogicalTypeId::INTEGER, EncryptData,
                                  EncryptFunctionData::EncryptBind));
 
-  set.AddFunction(ScalarFunction({LogicalTypeId::BIGINT, LogicalType::VARCHAR}, LogicalTypeId::BIGINT, EncryptData,
+  set.AddFunction(ScalarFunction({LogicalTypeId::BIGINT, LogicalType::VARCHAR},
+                                 LogicalTypeId::BIGINT, EncryptData,
                                  EncryptFunctionData::EncryptBind));
 
-  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::VARCHAR, EncryptData,
+  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR},
+                                 LogicalType::VARCHAR, EncryptData,
                                  EncryptFunctionData::EncryptBind));
 
   return set;
 }
 
 ScalarFunctionSet GetDecryptionFunction() {
-  ScalarFunctionSet set("decrypt");
+  ScalarFunctionSet set("decrypt_simple");
 
   // input is column of any type, key is of type VARCHAR, output is of same type
-  set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::VARCHAR}, LogicalTypeId::INTEGER, DecryptData,
+  set.AddFunction(ScalarFunction({LogicalTypeId::INTEGER, LogicalType::VARCHAR},
+                                 LogicalTypeId::INTEGER, DecryptData,
                                  EncryptFunctionData::EncryptBind));
 
-  set.AddFunction(ScalarFunction({LogicalTypeId::BIGINT, LogicalType::VARCHAR}, LogicalTypeId::BIGINT, DecryptData,
+  set.AddFunction(ScalarFunction({LogicalTypeId::BIGINT, LogicalType::VARCHAR},
+                                 LogicalTypeId::BIGINT, DecryptData,
                                  EncryptFunctionData::EncryptBind));
 
-  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::VARCHAR, DecryptData,
+  set.AddFunction(ScalarFunction({LogicalType::VARCHAR, LogicalType::VARCHAR},
+                                 LogicalType::VARCHAR, DecryptData,
                                  EncryptFunctionData::EncryptBind));
 
   return set;
@@ -255,5 +288,5 @@ void CoreScalarFunctions::RegisterEncryptDataScalarFunction(
   ExtensionUtil::RegisterFunction(db, GetEncryptionFunction());
   ExtensionUtil::RegisterFunction(db, GetDecryptionFunction());
 }
-}
-}
+} // namespace core
+} // namespace simple_encryption

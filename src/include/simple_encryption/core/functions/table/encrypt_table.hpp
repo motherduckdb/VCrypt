@@ -14,7 +14,6 @@ public:
   static void CreateEncryptColumnFunc(ClientContext &context,
                                       TableFunctionInput &data_p,
                                       DataChunk &output);
-
 };
-}
-}
+} // namespace core
+} // namespace simple_encryption

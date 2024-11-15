@@ -14,7 +14,8 @@ shared_ptr<EncryptionUtil> GetEncryptionUtil(ClientContext &context_p) {
   if (config.encryption_util) {
     return config.encryption_util;
   } else {
-    return make_shared_ptr<duckdb_mbedtls::MbedTlsWrapper::AESGCMStateMBEDTLSFactory>();
+    return make_shared_ptr<
+        duckdb_mbedtls::MbedTlsWrapper::AESGCMStateMBEDTLSFactory>();
   }
 }
 
@@ -32,9 +33,11 @@ SimpleEncryptionState::SimpleEncryptionState(shared_ptr<ClientContext> context)
   buffer_p = encryption_buffer;
 
   // Create a new table containing encryption metadata (nonce, tag)
-  auto query = new_conn->Query("CREATE TABLE IF NOT EXISTS __simple_encryption_internal ("
-                               "nonce VARCHAR, "
-                               "tag VARCHAR)", false);
+  auto query = new_conn->Query(
+      "CREATE TABLE IF NOT EXISTS __simple_encryption_internal ("
+      "nonce VARCHAR, "
+      "tag VARCHAR)",
+      false);
 
   if (query->HasError()) {
     throw TransactionException(query->GetError());
@@ -42,6 +45,6 @@ SimpleEncryptionState::SimpleEncryptionState(shared_ptr<ClientContext> context)
 }
 
 void SimpleEncryptionState::QueryEnd() {
-// clean up
-  }
+  // clean up
 }
+} // namespace duckdb

@@ -17,14 +17,14 @@ bool EncryptFunctionData::Equals(const FunctionData &other_p) const {
   return true;
 }
 
-unique_ptr<FunctionData> EncryptFunctionData::EncryptBind(ClientContext &context, ScalarFunction &bound_function,
-                                         vector<unique_ptr<Expression>> &arguments) {
+unique_ptr<FunctionData>
+EncryptFunctionData::EncryptBind(ClientContext &context,
+                                 ScalarFunction &bound_function,
+                                 vector<unique_ptr<Expression>> &arguments) {
   // here, implement bound statements?
 
   // do something
   return make_uniq<EncryptFunctionData>(context);
 }
-}
-}
-
-
+} // namespace core
+} // namespace simple_encryption

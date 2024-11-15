@@ -8,22 +8,48 @@ namespace simple_encryption {
 
 namespace core {
 
-LogicalType EncryptionTypes::E_INT() {
-  auto type = LogicalType::STRUCT({{"nonce", LogicalType::INTEGER}, {"value", LogicalType::INTEGER}});
-  type.SetAlias("E_INT");
+LogicalType EncryptionTypes::E_INTEGER() {
+  auto type = LogicalType::STRUCT(
+      {{"nonce_hi", LogicalType::BIGINT}, {"nonce_lo", LogicalType::BIGINT}, {"value", LogicalType::INTEGER}});
+  type.SetAlias("E_INTEGER");
+  return type;
+}
+
+LogicalType EncryptionTypes::EA_INTEGER() {
+  auto type = LogicalType::STRUCT(
+      {{"value", LogicalType::INTEGER}, {"nonce_hi", LogicalType::BIGINT}, {"nonce_lo", LogicalType::BIGINT},
+       {"tag", LogicalType::VARCHAR}});
+  type.SetAlias("EA_INTEGER");
+  return type;
+}
+
+LogicalType EncryptionTypes::E_UINTEGER() {
+  auto type = LogicalType::STRUCT(
+      {{"nonce_hi", LogicalType::BIGINT}, {"nonce_lo", LogicalType::BIGINT}, {"value", LogicalType::UINTEGER}});
+  type.SetAlias("E_UINTEGER");
+  return type;
+}
+
+LogicalType EncryptionTypes::EA_UINTEGER() {
+  auto type = LogicalType::STRUCT(
+      {{"value", LogicalType::UINTEGER}, {"nonce_hi", LogicalType::BIGINT}, {"nonce_lo", LogicalType::BIGINT},
+       {"tag", LogicalType::VARCHAR}});
+  type.SetAlias("EA_UINTEGER");
   return type;
 }
 
 LogicalType EncryptionTypes::E_VARCHAR() {
-  auto blob_type = LogicalType::STRUCT({{"nonce", LogicalType::INTEGER}, {"value", LogicalType::VARCHAR}});
-  blob_type.SetAlias("E_VARCHAR");
-  return blob_type;
+  auto type = LogicalType::STRUCT(
+      {{"nonce_hi", LogicalType::BIGINT}, {"nonce_lo", LogicalType::BIGINT}, {"value", LogicalType::VARCHAR}});
+type.SetAlias("E_VARCHAR");
+  return type;
 }
 
 void EncryptionTypes::Register(DatabaseInstance &db) {
 
-  // Encrypted INT
-  ExtensionUtil::RegisterType(db, "E_INT", EncryptionTypes::E_INT());
+  // Supported Numeric Values
+  ExtensionUtil::RegisterType(db, "E_INTEGER", EncryptionTypes::E_INTEGER());
+  ExtensionUtil::RegisterType(db, "E_UINTEGER", EncryptionTypes::E_UINTEGER());
 
   // Encrypted VARCHAR
   ExtensionUtil::RegisterType(db, "E_VARCHAR", EncryptionTypes::E_VARCHAR());
@@ -31,4 +57,4 @@ void EncryptionTypes::Register(DatabaseInstance &db) {
 
 } // namespace core
 
-} // namespace spatial
+} // namespace simple_encryption

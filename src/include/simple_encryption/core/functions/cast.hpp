@@ -14,9 +14,7 @@ public:
 
 struct CoreCastFunctions {
 public:
-  static void Register(DatabaseInstance &db) {
-    RegisterVarcharCasts(db);
-  }
+  static void Register(DatabaseInstance &db) { RegisterVarcharCasts(db); }
 
 private:
   static void RegisterVarcharCasts(DatabaseInstance &db);
@@ -24,4 +22,4 @@ private:
 
 } // namespace core
 
-} // namespace spatial
+} // namespace simple_encrypt

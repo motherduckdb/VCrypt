@@ -15,7 +15,6 @@ private:
   static void RegisterEncryptColumnTableFunction(duckdb::DatabaseInstance &db);
 };
 
-
 } // namespace core
 
 } // namespace simple_encryption
