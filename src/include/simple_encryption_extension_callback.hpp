@@ -8,8 +8,9 @@ namespace duckdb {
 
 class SimpleEncryptionExtensionCallback : public ExtensionCallback {
   void OnConnectionOpened(ClientContext &context) override {
-    context.registered_state->Insert("simple_encryption",
-                                     make_shared_ptr<SimpleEncryptionState>(context.shared_from_this()));
+    context.registered_state->Insert(
+        "simple_encryption",
+        make_shared_ptr<SimpleEncryptionState>(context.shared_from_this()));
   }
 };
-}
+} // namespace duckdb

@@ -12,8 +12,7 @@ namespace simple_encryption {
 namespace core {
 
 void CreateEncryptColumnFunction::CreateEncryptColumnFunc(
-    ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
-}
+    ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {}
 
 //------------------------------------------------------------------------------
 // Register functions
@@ -24,5 +23,5 @@ void CoreTableFunctions::RegisterEncryptColumnTableFunction(
   ExtensionUtil::RegisterFunction(db, CreateEncryptColumnFunction());
 }
 
-}
-}
+} // namespace core
+} // namespace simple_encryption

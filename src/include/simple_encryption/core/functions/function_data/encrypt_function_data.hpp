@@ -6,17 +6,17 @@
 namespace simple_encryption {
 namespace core {
 
-struct EncryptFunctionData: FunctionData {
+struct EncryptFunctionData : FunctionData {
 
   // Save the ClientContext
   ClientContext &context;
-//  BoundStatement relation;
+  //  BoundStatement relation;
 
-  EncryptFunctionData(ClientContext &context)
-      : context(context) {}
+  EncryptFunctionData(ClientContext &context) : context(context) {}
 
-  static unique_ptr<FunctionData> EncryptBind(ClientContext &context, ScalarFunction &bound_function,
-                      vector<unique_ptr<Expression>> &arguments);
+  static unique_ptr<FunctionData>
+  EncryptBind(ClientContext &context, ScalarFunction &bound_function,
+              vector<unique_ptr<Expression>> &arguments);
 
   unique_ptr<FunctionData> Copy() const override;
   bool Equals(const FunctionData &other_p) const override;

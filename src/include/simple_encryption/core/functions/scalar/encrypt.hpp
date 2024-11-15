@@ -29,5 +29,5 @@ private:
   unordered_map<string, string> keys;
 };
 
-}
-}
+} // namespace core
+} // namespace simple_encryption

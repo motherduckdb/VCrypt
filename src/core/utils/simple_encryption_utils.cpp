@@ -7,8 +7,10 @@ namespace simple_encryption {
 namespace core {
 
 // Get SimpleEncryptionState from ClientContext
-shared_ptr<SimpleEncryptionState> GetSimpleEncryptionState(ClientContext &context) {
-  auto lookup = context.registered_state->Get<SimpleEncryptionState>("simple_encryption");
+shared_ptr<SimpleEncryptionState>
+GetSimpleEncryptionState(ClientContext &context) {
+  auto lookup =
+      context.registered_state->Get<SimpleEncryptionState>("simple_encryption");
   if (!lookup) {
     throw Exception(ExceptionType::INVALID,
                     "Registered simple encryption state not found");
@@ -16,5 +18,5 @@ shared_ptr<SimpleEncryptionState> GetSimpleEncryptionState(ClientContext &contex
   return lookup;
 }
 
-}
-}
+} // namespace core
+} // namespace simple_encryption

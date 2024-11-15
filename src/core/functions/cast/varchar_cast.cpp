@@ -12,4 +12,4 @@ namespace core {
 // do something
 
 }
-}
+} // namespace simple_encrypt

@@ -22,8 +22,6 @@ public:
 
   // encryption buffer
   uint8_t *buffer_p;
-
 };
 
 } // namespace duckdb
-
