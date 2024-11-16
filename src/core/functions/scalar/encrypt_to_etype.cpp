@@ -1,8 +1,5 @@
 #define DUCKDB_EXTENSION_MAIN
 
-// what is the maximum size of biggest type in duckdb
-#define MAX_BUFFER_SIZE 1024
-
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/types.hpp"
@@ -21,8 +18,6 @@
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "simple_encryption/core/types.hpp"
 #include "duckdb/common/vector_operations/generic_executor.hpp"
-
-// temporary
 
 namespace simple_encryption {
 
@@ -79,6 +74,7 @@ ProcessAndCastDecrypt(shared_ptr<EncryptionState> encryption_state,
   size_t decrypted_size = encrypted_size;
   Blob::FromBase64(base64_data, reinterpret_cast<data_ptr_t>(buffer_p),
                    encrypted_size);
+
   D_ASSERT(encrypted_size <= base64_data.GetSize());
 
   string_t decrypted_data =

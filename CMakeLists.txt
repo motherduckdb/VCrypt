@@ -30,6 +30,7 @@ set(EXTENSION_SOURCES
     src/core/functions/function_data/encrypt_function_data.cpp
     src/core/functions/cast/varchar_cast.cpp
     src/core/functions/table/encrypt_table.cpp
+    src/core/functions/secrets/authentication.cpp
     src/core/utils/simple_encryption_utils.cpp
     src/core/crypto/crypto_primitives.cpp)
 
