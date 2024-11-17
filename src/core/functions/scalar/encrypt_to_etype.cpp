@@ -17,7 +17,9 @@
 #include "simple_encryption/core/functions/function_data/encrypt_function_data.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "simple_encryption/core/types.hpp"
+#include "simple_encryption/core/functions/secrets.hpp"
 #include "duckdb/common/vector_operations/generic_executor.hpp"
+#include "duckdb/main/secret/secret_manager.hpp"
 
 namespace simple_encryption {
 
@@ -99,17 +101,38 @@ ProcessAndCastDecrypt(shared_ptr<EncryptionState> encryption_state,
   return decrypted_data;
 }
 
+EncryptFunctionData &GetEncryptionBindInfo(ExpressionState &state) {
+  auto &func_expr = (BoundFunctionExpression &)state.expr;
+  return (EncryptFunctionData &)*func_expr.bind_info;;
+}
+
 shared_ptr<SimpleEncryptionState>
 GetSimpleEncryptionState(ExpressionState &state) {
 
-  auto &func_expr = (BoundFunctionExpression &)state.expr;
-  auto &info = (EncryptFunctionData &)*func_expr.bind_info;
+  auto &info = GetEncryptionBindInfo(state);
 
-  auto simple_encryption_state =
-      info.context.registered_state->Get<SimpleEncryptionState>(
-          "simple_encryption");
+  return info.context.registered_state->Get<SimpleEncryptionState>(
+      "simple_encryption");
+}
 
-  return simple_encryption_state;
+unique_ptr<SecretEntry> GetSecretEntry(ExpressionState &state) {
+
+  auto &info = GetEncryptionBindInfo(state);
+  auto &secret_manager = SecretManager::Get(info.context);
+  auto transaction = CatalogTransaction::GetSystemCatalogTransaction(info.context);
+
+  return secret_manager.GetSecretByName(transaction, "internal");
+}
+
+void GetKeyFromSecret(shared_ptr<SimpleEncryptionState> simple_encryption_state,
+                      ExpressionState &state) {
+
+  auto secret_entry = GetSecretEntry(state);
+  auto &secret = secret_entry->secret;
+  auto encryption_secret = KeyValueSecret(*secret);
+
+  // do some stuffffff
+  auto x = encryption_secret.redact_keys;
 }
 
 bool HasSpace(shared_ptr<SimpleEncryptionState> simple_encryption_state,
@@ -169,8 +192,13 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
   using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
   using PLAINTEXT_TYPE = PrimitiveType<T>;
 
+  encryption_state->InitializeEncryption(
+      reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 16,
+      reinterpret_cast<const string *>(&key_t));
+
   GenericExecutor::ExecuteUnary<PLAINTEXT_TYPE, ENCRYPTED_TYPE>(
       input_vector, result, size, [&](PLAINTEXT_TYPE input) {
+
         // increment the low part of the nonce
         simple_encryption_state->iv[1]++;
         simple_encryption_state->counter++;
@@ -364,6 +392,7 @@ ScalarFunctionSet GetDecryptionStructFunction() {
 //      set.AddFunction(ScalarFunction({EncryptionTypes::E_INTEGER(),
 //      LogicalType::VARCHAR}, LogicalTypeId::INTEGER, DecryptDataFromEtype,
 //                                     EncryptFunctionData::EncryptBind));
+
   }
 
   return set;

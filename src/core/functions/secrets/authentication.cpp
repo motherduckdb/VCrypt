@@ -27,6 +27,18 @@ namespace core {
   return key_string;
 }
 
+bool CheckKeySize(const uint32_t size){
+
+  switch(size){
+  case 16:
+  case 24:
+  case 32:
+    return true;
+  default:
+    throw InvalidInputException("Invalid size for data encryption key: '%d', expected: 16, 24, or 32", size);
+  }
+}
+
 string_t GetDataEncryptionKey(const uint32_t size){
 
   switch(size){
@@ -42,9 +54,8 @@ string_t GetDataEncryptionKey(const uint32_t size){
 }
 
 // This code partly copied / inspired by the gsheets extension for duckdb
-static void CopySecret(const std::string &key, const CreateSecretInput &input,
+static void AddSecretParameter(const std::string &key, const CreateSecretInput &input,
                        KeyValueSecret &result) {
-
   // this method checks whether a secret_param is present in the secret_map
   auto val = input.options.find(key);
   // does this also take a key, value or list struct?
@@ -54,10 +65,8 @@ static void CopySecret(const std::string &key, const CreateSecretInput &input,
 }
 
 static void RegisterCommonSecretParameters(CreateSecretFunction &function) {
-  // Register named parameters for encryption of columns
-  // key encryption key (kek) (keks encrypt/decrypt data encryption keys (deks))
-  function.named_parameters["kek"] = LogicalType::VARCHAR;
-  function.named_parameters["column"] = LogicalType::VARCHAR;
+  function.named_parameters["client"] = LogicalType::VARCHAR;
+  function.named_parameters["master"] = LogicalType::VARCHAR;
   function.named_parameters["key_id"] = LogicalType::VARCHAR;
 }
 
@@ -68,18 +77,18 @@ static void InsertColumnKeys(KeyValueSecret &result, string column_key_name) {
 static unique_ptr<BaseSecret>
 CreateKeyEncryptionKey(ClientContext &context, CreateSecretInput &input) {
 
+  // leave this for now
   auto scope = input.scope;
 
+  // create new KV secret
   auto result =
       make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
 
-  // Manage specific secret option
-  CopySecret("column", input, *result);
-  CopySecret("key_id", input, *result);
+  // Manage specific secret options
+  // can be called if a data encryption key (DEK) needs to be stored
+  AddSecretParameter("column_encryption_key", input, *result);
 
-  // Redact sensible keys
-//  RedactCommonKeys(*result);
-
+  // Hide (redact) sensitive information
   result->redact_keys.insert("column");
 
   return std::move(result);
@@ -98,11 +107,8 @@ void CoreSecretFunctions::RegisterStoreEncryptSecretFunction(DatabaseInstance &d
 
   // Register the key_encryption_key secret provider
   CreateSecretFunction key_encryption_key = {type, "client", CreateKeyEncryptionKey};
-
-  key_encryption_key.named_parameters["client"] = LogicalType::VARCHAR;
   RegisterCommonSecretParameters(key_encryption_key);
   ExtensionUtil::RegisterFunction(db, key_encryption_key);
-
 }
 
 }

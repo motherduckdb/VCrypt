@@ -12,10 +12,10 @@ Catalog Error: Scalar Function with name simple_encryption does not exist!
 require simple_encryption
 
 statement ok
-SELECT encrypt_etypes(11, '0123456789112345');
+SELECT encrypt(11, '0123456789112345');
 
 query I
-SELECT decrypt_etypes({'nonce_hi': 11752579000357969348, 'nonce_lo': 2472254480, 'value': 1288890}, '0123456789112345');
+SELECT decrypt({'nonce_hi': 11752579000357969348, 'nonce_lo': 2472254480, 'value': 1288890}, '0123456789112345');
 ----
 194072790
 
@@ -52,13 +52,13 @@ SELECT decrypted_values FROM test_1;
 1
 
 statement ok
-SELECT encrypt_etypes('testtest', '0123456789112345');
+SELECT encrypt('testtest', '0123456789112345');
 
 statement ok
 CREATE TABLE test_varchar AS SELECT CAST('hello' AS VARCHAR) AS value FROM range(10);
 
 statement ok
-SELECT encrypt_etypes(value, '0123456789112345') AS encrypted_value FROM test_varchar;
+SELECT encrypt(value, '0123456789112345') AS encrypted_value FROM test_varchar;
 
 statement ok
 ALTER TABLE test_varchar ADD COLUMN encrypted_values STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, value VARCHAR);
@@ -67,10 +67,10 @@ statement ok
 ALTER TABLE test_varchar ADD COLUMN decrypted_values VARCHAR;
 
 statement ok
-UPDATE test_varchar SET encrypted_values = encrypt_etypes(value, '0123456789112345');
+UPDATE test_varchar SET encrypted_values = encrypt(value, '0123456789112345');
 
 statement ok
-UPDATE test_varchar SET decrypted_values = decrypt_etypes(encrypted_values, '0123456789112345');
+UPDATE test_varchar SET decrypted_values = decrypt(encrypted_values, '0123456789112345');
 
 query I
 SELECT decrypted_values FROM test_varchar;
