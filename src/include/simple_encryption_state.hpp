@@ -17,8 +17,9 @@ public:
   shared_ptr<EncryptionState> encryption_state;
 
   // nonce metadata
-  uint64_t iv[2];
   uint32_t counter = 0;
+  bool is_initialized = false;
+  uint64_t iv[2];
 
   // encryption buffer
   uint8_t *buffer_p;

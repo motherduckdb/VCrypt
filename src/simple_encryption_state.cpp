@@ -29,6 +29,7 @@ SimpleEncryptionState::SimpleEncryptionState(shared_ptr<ClientContext> context)
   encryption_state = GetEncryptionUtil(*new_conn)->CreateEncryptionState();
 
   // allocate encryption buffer
+  // maybe do this in a better way (i.e. use buffer manager?)
   uint8_t encryption_buffer[MAX_BUFFER_SIZE];
   buffer_p = encryption_buffer;
 
