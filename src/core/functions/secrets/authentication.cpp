@@ -35,12 +35,12 @@ bool CheckKeySize(const uint32_t size){
   case 32:
     return true;
   default:
-    throw InvalidInputException("Invalid size for data encryption key: '%d', expected: 16, 24, or 32", size);
+    return false;
   }
 }
 
-string_t GetDataEncryptionKey(const uint32_t size){
 
+string_t GetDataEncryptionKey(const uint32_t size){
   switch(size){
   case 16:
     return GenerateDataEncryptionKey(16);
@@ -53,6 +53,7 @@ string_t GetDataEncryptionKey(const uint32_t size){
   }
 }
 
+
 // This code partly copied / inspired by the gsheets extension for duckdb
 static void AddSecretParameter(const std::string &key, const CreateSecretInput &input,
                        KeyValueSecret &result) {
@@ -64,39 +65,55 @@ static void AddSecretParameter(const std::string &key, const CreateSecretInput &
   }
 }
 
+
 static void RegisterCommonSecretParameters(CreateSecretFunction &function) {
-  function.named_parameters["client"] = LogicalType::VARCHAR;
-  function.named_parameters["master"] = LogicalType::VARCHAR;
-  function.named_parameters["key_id"] = LogicalType::VARCHAR;
+  function.named_parameters["key_value"] = LogicalType::VARCHAR;
+  function.named_parameters["key_name"] = LogicalType::VARCHAR;
+  function.named_parameters["length"] = LogicalType::INTEGER;
 }
 
-static void InsertColumnKeys(KeyValueSecret &result, string column_key_name) {
-  result.redact_keys.insert(column_key_name);
+
+static void RedactSensitiveKeys(KeyValueSecret &result) {
+  result.redact_keys.insert("token");
 }
 
-static unique_ptr<BaseSecret>
-CreateKeyEncryptionKey(ClientContext &context, CreateSecretInput &input) {
 
-  // leave this for now
+static unique_ptr<BaseSecret> CreateKeyEncryptionKey(ClientContext &context, CreateSecretInput &input) {
+
   auto scope = input.scope;
 
   // create new KV secret
   auto result =
       make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
 
-  // Manage specific secret options
-  // can be called if a data encryption key (DEK) needs to be stored
-  AddSecretParameter("column_encryption_key", input, *result);
+  // check key size
+  auto length = input.options["length"].GetValue<uint32_t>();
+
+  if (!CheckKeySize(length)){
+    throw InvalidInputException("Invalid size for encryption key: '%d', expected: 16, 24, or 32", length);
+  }
+
+
+  // get the results from the user input
+  auto password = input.options["key_value"].GetValue<std::string>();
+  auto key_name = input.options["key_name"].GetValue<std::string>();
+
+  // todo: generate key from user input
+  // get token from user input
+  std::string token = "0123456789112345";
+
+  // Store the token in the secret
+  result->secret_map["token"] = Value(token);
 
   // Hide (redact) sensitive information
-  result->redact_keys.insert("column");
+  RedactSensitiveKeys(*result);
 
   return std::move(result);
 }
 
 void CoreSecretFunctions::RegisterStoreEncryptSecretFunction(DatabaseInstance &db) {
 
-  string type = "internal";
+  string type = "encryption";
 
   // Register the new secret type
   SecretType secret_type;

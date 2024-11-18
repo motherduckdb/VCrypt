@@ -115,25 +115,45 @@ GetSimpleEncryptionState(ExpressionState &state) {
       "simple_encryption");
 }
 
-unique_ptr<SecretEntry> GetSecretEntry(ExpressionState &state) {
+
+std::string GetKeyFromSecret(ExpressionState &state) {
 
   auto &info = GetEncryptionBindInfo(state);
   auto &secret_manager = SecretManager::Get(info.context);
   auto transaction = CatalogTransaction::GetSystemCatalogTransaction(info.context);
+  auto secret_match = secret_manager.LookupSecret(transaction, "encryption", "encryption");
 
-  return secret_manager.GetSecretByName(transaction, "internal");
+  if (!secret_match.HasMatch()) {
+    throw InvalidInputException("No 'encryption' secret found. Please create a secret with 'CREATE SECRET' first.");
+  }
+
+  auto &secret = secret_match.GetSecret();
+  if (secret.GetType() != "encryption") {
+    throw InvalidInputException("Invalid secret type. Expected 'encryption', got '%s'", secret.GetType());
+  }
+
+  const auto *kv_secret = dynamic_cast<const KeyValueSecret *>(&secret);
+  if (!kv_secret) {
+    throw InvalidInputException("Invalid secret format for 'encryption' secret.");
+  }
+
+  Value token_value;
+  if (!kv_secret->TryGetValue("token", token_value)) {
+    throw InvalidInputException("'token' not found in 'encryption' secret.");
+  }
+
+//
+//  // Parse optional label parameter
+//  std::string label = ""; // Default to fetching all emails if no label is provided
+//  if (input.named_parameters.find("mail_label") != input.named_parameters.end()) {
+//    label = input.named_parameters.at("mail_label").GetValue<std::string>();
+//  }
+
+  std::string token = token_value.ToString();
+
+  return token;
 }
 
-void GetKeyFromSecret(shared_ptr<SimpleEncryptionState> simple_encryption_state,
-                      ExpressionState &state) {
-
-  auto secret_entry = GetSecretEntry(state);
-  auto &secret = secret_entry->secret;
-  auto encryption_secret = KeyValueSecret(*secret);
-
-  // do some stuffffff
-  auto x = encryption_secret.redact_keys;
-}
 
 bool HasSpace(shared_ptr<SimpleEncryptionState> simple_encryption_state,
               uint64_t size) {
@@ -143,6 +163,7 @@ bool HasSpace(shared_ptr<SimpleEncryptionState> simple_encryption_state,
   }
   return false;
 }
+
 
 void SetIV(shared_ptr<SimpleEncryptionState> simple_encryption_state) {
   simple_encryption_state->iv[0] = simple_encryption_state->iv[1] = 0;
@@ -180,7 +201,7 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
   result.ReferenceAndSetType(struct_vector);
 
   if ((simple_encryption_state->counter == 0) || (HasSpace(simple_encryption_state, size) == false)) {
-    // generate new random IV and reset counter
+    // generate new random IV and reset counter (if strart or if there is no space left)
     SetIV(simple_encryption_state);
     simple_encryption_state->counter = 0;
   }
@@ -214,6 +235,8 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
         return ENCRYPTED_TYPE{simple_encryption_state->iv[0],
                               simple_encryption_state->iv[1], encrypted_data};
       });
+
+  encryption_state->Finalize(simple_encryption_state->buffer_p, 0, nullptr, NULL);
 }
 
 template <typename T>
@@ -251,6 +274,12 @@ static void EncryptDataToEtype(DataChunk &args, ExpressionState &state,
   auto &input_vector = args.data[0];
   auto vector_type = input_vector.GetType();
   auto size = args.size();
+
+  // Get the encryption key from DuckDB Secrets Manager
+  auto encryption_key = GetKeyFromSecret(state);
+
+  // Check if a key is already present in the state
+  // if not, generate a new key
 
   // Get the encryption key from client input
   auto &key_vector = args.data[1];
