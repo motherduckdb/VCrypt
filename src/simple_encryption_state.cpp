@@ -33,6 +33,9 @@ SimpleEncryptionState::SimpleEncryptionState(shared_ptr<ClientContext> context)
   uint8_t encryption_buffer[MAX_BUFFER_SIZE];
   buffer_p = encryption_buffer;
 
+  // clear the iv
+  iv[0] = iv[1] = 0;
+
   // Create a new table containing encryption metadata (nonce, tag)
   auto query = new_conn->Query(
       "CREATE TABLE IF NOT EXISTS __simple_encryption_internal ("

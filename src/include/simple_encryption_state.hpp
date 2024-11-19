@@ -21,6 +21,10 @@ public:
   bool is_initialized = false;
   uint64_t iv[2];
 
+  // todo; key can also be 24 or 32 (resize or always allocate 32)
+  std::string key;
+  bool key_flag = false;
+
   // encryption buffer
   uint8_t *buffer_p;
 };

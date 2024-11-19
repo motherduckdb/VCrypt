@@ -23,7 +23,6 @@ EncryptFunctionData::EncryptBind(ClientContext &context,
                                  vector<unique_ptr<Expression>> &arguments) {
   // here, implement bound statements?
 
-  // do something
   return make_uniq<EncryptFunctionData>(context);
 }
 } // namespace core
