@@ -67,7 +67,7 @@ static void AddSecretParameter(const std::string &key, const CreateSecretInput &
 
 
 static void RegisterCommonSecretParameters(CreateSecretFunction &function) {
-  function.named_parameters["key_value"] = LogicalType::VARCHAR;
+  function.named_parameters["master_key"] = LogicalType::VARCHAR;
   function.named_parameters["key_name"] = LogicalType::VARCHAR;
   function.named_parameters["length"] = LogicalType::INTEGER;
 }
@@ -90,20 +90,16 @@ static unique_ptr<BaseSecret> CreateKeyEncryptionKey(ClientContext &context, Cre
   auto length = input.options["length"].GetValue<uint32_t>();
 
   if (!CheckKeySize(length)){
-    throw InvalidInputException("Invalid size for encryption key: '%d', expected: 16, 24, or 32", length);
+    throw InvalidInputException("Invalid size for encryption key: '%d', only a length of 16 bytes is supported", length);
   }
 
-
-  // get the results from the user input
-  auto password = input.options["key_value"].GetValue<std::string>();
+  // get the other results from the user input
+  auto master_key = input.options["master_key"].GetValue<std::string>();
   auto key_name = input.options["key_name"].GetValue<std::string>();
 
-  // todo: generate key from user input
-  // get token from user input
-  std::string token = "0123456789112345";
-
   // Store the token in the secret
-  result->secret_map["token"] = Value(token);
+  result->secret_map["token"] = Value(master_key);
+  result->secret_map["length"] = Value(to_string(length));
 
   // Hide (redact) sensitive information
   RedactSensitiveKeys(*result);

@@ -4,10 +4,15 @@
 #include "duckdb/common/common.hpp"
 #include <stdio.h>
 
+// todo; use httplib for windows compatibility
+//#define CPPHTTPLIB_OPENSSL_SUPPORT
+//#include "duckdb/third_party/httplib/httplib.hpp"
+
 // OpenSSL functions
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
+#include <openssl/hmac.h>
 
 namespace duckdb {
 
@@ -190,4 +195,34 @@ extern "C" {
 DUCKDB_EXTENSION_API AESStateSSLFactory *CreateSSLFactory() {
   return new AESStateSSLFactory();
 };
+}
+
+namespace simple_encryption {
+
+namespace core {
+
+std::string CalculateHMAC(const std::string &secret, const std::string &message, const uint32_t length) {
+  const EVP_MD *algorithm = EVP_sha256(); // Replace with EVP_sha1(), EVP_md5(), etc., if needed.
+  unsigned char key_buffer[32];
+
+  // Output buffer and length
+  unsigned char hmacResult[EVP_MAX_MD_SIZE];
+  unsigned int hmacLength = 0;
+
+  // Compute the HMAC
+  HMAC(algorithm,
+       secret.data(), secret.size(),                // Key
+       reinterpret_cast<const unsigned char*>(message.data()), message.size(), // Message
+       hmacResult, &hmacLength);
+
+  // Copy the desired number of bytes
+  memcpy(key_buffer, hmacResult, length);
+
+  // convert to string
+  std::string result_key(reinterpret_cast<const char*>(key_buffer), length);
+
+  return result_key;
+}
+
+}
 }

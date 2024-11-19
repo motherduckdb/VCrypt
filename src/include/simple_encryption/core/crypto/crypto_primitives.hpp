@@ -45,6 +45,14 @@ private:
 
 } // namespace duckdb
 
+namespace simple_encryption {
+namespace core {
+
+std::string CalculateHMAC(const std::string &secret, const std::string &message, uint32_t length);
+
+}
+}
+
 extern "C" {
 
 class DUCKDB_EXTENSION_API AESStateSSLFactory : public duckdb::EncryptionUtil {
