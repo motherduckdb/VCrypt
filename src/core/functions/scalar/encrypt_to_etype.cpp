@@ -204,9 +204,40 @@ uint32_t GetLengthFromSecret(ExpressionState &state){
   return length_value.GetValue<uint32_t>();
 }
 
-std::string GenerateColumnKey(ExpressionState &state, const std::string &message){
+string GetSecretFromKeyName(ExpressionState &state, string key_name){
+
+  // todo; we can also put the secret in the state
+  auto &info = GetEncryptionBindInfo(state);
+  auto &secret_manager = SecretManager::Get(info.context);
+  auto transaction = CatalogTransaction::GetSystemCatalogTransaction(info.context);
+  auto secret_entry = secret_manager.GetSecretByName(transaction, key_name);
+
+  if (!secret_entry) {
+    throw InvalidInputException("No secret found with name '%s'.", key_name);
+  }
+
+  // Safely access the secret
+  if (!secret_entry->secret) {
+    throw InvalidInputException("Secret found, but '%s' contains no actual secret.", key_name);
+  }
+
+  // Retrieve the secret
+  auto &secret = *secret_entry->secret;
+  // Retrieve the key, value secret
+  const auto *kv_secret = dynamic_cast<const KeyValueSecret *>(&secret);
+
+  Value token_value;
+  if (!kv_secret->TryGetValue("token", token_value)) {
+    throw InvalidInputException("'token' not found in 'encryption' secret.");
+  }
+
+  return token_value.ToString();
+}
+
+std::string GenerateColumnKey(ExpressionState &state, const std::string &key_name, const std::string &message){
   // Get the encryption key from DuckDB Secrets Manager
-  auto secret = GetKeyFromSecret(state);
+//  auto secret = GetKeyFromSecret(state);
+  auto secret = GetSecretFromKeyName(state, key_name);
   size_t length = GetLengthFromSecret(state);
 
   return CalculateHMAC(secret, message, length);
@@ -223,9 +254,21 @@ bool HasSpace(shared_ptr<SimpleEncryptionState> simple_encryption_state,
 
 
 void SetIV(shared_ptr<SimpleEncryptionState> simple_encryption_state) {
-  simple_encryption_state->iv[0] = simple_encryption_state->iv[1] = 0;
+  simple_encryption_state->iv[1] = 0;
   simple_encryption_state->encryption_state->GenerateRandomData(
       reinterpret_cast<data_ptr_t>(simple_encryption_state->iv), 12);
+}
+
+bool CheckGeneratedKeySize(const uint32_t size){
+
+  switch(size){
+  case 16:
+  case 24:
+  case 32:
+    return true;
+  default:
+    return false;
+  }
 }
 
 shared_ptr<EncryptionState> GetEncryptionState(ExpressionState &state) {
@@ -247,7 +290,7 @@ LogicalType CreateEVARtypeStruct() {
 
 template <typename T>
 void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
-                    const string message_t, uint64_t size, ExpressionState &state,
+                    const string key_name, const string message_t, uint64_t size, ExpressionState &state,
                     Vector &result) {
 
   // this now happens for every chunk, maybe we should already put it in the bind
@@ -256,9 +299,11 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
 
   // calculate column key if no key set yet
   if (!simple_encryption_state->key_flag){
-    simple_encryption_state->key = GenerateColumnKey(state, message_t);
+    simple_encryption_state->key = GenerateColumnKey(state, key_name, message_t);
     simple_encryption_state->key_flag = true;
   }
+
+  D_ASSERT(CheckGeneratedKeySize(simple_encryption_state->key.size()));
 
   // Reset the reference of the result vector
   Vector struct_vector(result_struct, size);
@@ -274,15 +319,17 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
   auto &nonce_hi = children[0];
   nonce_hi->SetVectorType(VectorType::CONSTANT_VECTOR);
 
+  auto nonce_lo = simple_encryption_state->iv[1];
+
   using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
   using PLAINTEXT_TYPE = PrimitiveType<T>;
 
+  encryption_state->InitializeEncryption(
+      reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 16,
+      reinterpret_cast<const string *>(&simple_encryption_state->key));
+
   GenericExecutor::ExecuteUnary<PLAINTEXT_TYPE, ENCRYPTED_TYPE>(
       input_vector, result, size, [&](PLAINTEXT_TYPE input) {
-
-        // increment the low part of the nonce
-        simple_encryption_state->iv[1]++;
-        simple_encryption_state->counter++;
 
         encryption_state->InitializeEncryption(
             reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 16,
@@ -292,14 +339,18 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
             ProcessAndCastEncrypt(encryption_state, result, input.val,
                                   simple_encryption_state->buffer_p);
 
+        nonce_lo = simple_encryption_state->iv[1];
+        simple_encryption_state->counter++;
+        simple_encryption_state->iv[1]++;
+
         return ENCRYPTED_TYPE{simple_encryption_state->iv[0],
-                              simple_encryption_state->iv[1], encrypted_data};
+                              nonce_lo, encrypted_data};
       });
 }
 
 
 template <typename T>
-void DecryptFromEtype(Vector &input_vector, const string message_t, uint64_t size,
+void DecryptFromEtype(Vector &input_vector, const string key_name, const string message_t, uint64_t size,
                       ExpressionState &state, Vector &result) {
 
   auto simple_encryption_state = GetSimpleEncryptionState(state);
@@ -307,9 +358,11 @@ void DecryptFromEtype(Vector &input_vector, const string message_t, uint64_t siz
 
   // calculate column key if no key set yet
   if (!simple_encryption_state->key_flag){
-    simple_encryption_state->key = GenerateColumnKey(state, message_t);
+    simple_encryption_state->key = GenerateColumnKey(state, key_name, message_t);
     simple_encryption_state->key_flag = true;
   }
+
+  D_ASSERT(CheckGeneratedKeySize(simple_encryption_state->key.size()));
 
   using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
   using PLAINTEXT_TYPE = PrimitiveType<T>;
@@ -320,7 +373,7 @@ void DecryptFromEtype(Vector &input_vector, const string message_t, uint64_t siz
         simple_encryption_state->iv[1] = input.b_val;
 
         encryption_state->InitializeDecryption(
-            reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 16,
+            reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 12,
             reinterpret_cast<const string *>(&simple_encryption_state->key));
 
         T decrypted_data =
@@ -338,45 +391,50 @@ static void EncryptDataToEtype(DataChunk &args, ExpressionState &state,
   auto vector_type = input_vector.GetType();
   auto size = args.size();
 
-  // Get the encryption key from client input
-  auto &message_vector = args.data[1];
+  // Get the key_name and message from client input
+  auto &key_name_vector = args.data[1];
+  auto &message_vector = args.data[2];
+
   D_ASSERT(message_vector.GetVectorType() == VectorType::CONSTANT_VECTOR);
+  D_ASSERT(key_name_vector.GetVectorType() == VectorType::CONSTANT_VECTOR);
   const string message_t =
       ConstantVector::GetData<string_t>(message_vector)[0].GetString();
+  const string key_name_t =
+      ConstantVector::GetData<string_t>(key_name_vector)[0].GetString();
 
   if (vector_type.IsNumeric()) {
     switch (vector_type.id()) {
     case LogicalTypeId::TINYINT:
     case LogicalTypeId::UTINYINT:
-      return EncryptToEtype<int8_t>(CreateEINTtypeStruct(), input_vector, message_t,
+      return EncryptToEtype<int8_t>(CreateEINTtypeStruct(), input_vector, key_name_t, message_t,
                                     size, state, result);
     case LogicalTypeId::SMALLINT:
     case LogicalTypeId::USMALLINT:
       return EncryptToEtype<int16_t>(CreateEINTtypeStruct(), input_vector,
-                                     message_t, size, state, result);
+                                     key_name_t, message_t, size, state, result);
     case LogicalTypeId::INTEGER:
       return EncryptToEtype<int32_t>(CreateEINTtypeStruct(), input_vector,
-                                     message_t, size, state, result);
+                                     key_name_t, message_t, size, state, result);
     case LogicalTypeId::UINTEGER:
       return EncryptToEtype<uint32_t>(CreateEINTtypeStruct(), input_vector,
-                                      message_t, size, state, result);
+                                      key_name_t, message_t, size, state, result);
     case LogicalTypeId::BIGINT:
       return EncryptToEtype<int64_t>(CreateEINTtypeStruct(), input_vector,
-                                     message_t, size, state, result);
+                                     key_name_t, message_t, size, state, result);
     case LogicalTypeId::UBIGINT:
       return EncryptToEtype<uint64_t>(CreateEINTtypeStruct(), input_vector,
-                                      message_t, size, state, result);
+                                      key_name_t, message_t, size, state, result);
     case LogicalTypeId::FLOAT:
-      return EncryptToEtype<float>(CreateEINTtypeStruct(), input_vector, message_t,
+      return EncryptToEtype<float>(CreateEINTtypeStruct(), input_vector, key_name_t, message_t,
                                    size, state, result);
     case LogicalTypeId::DOUBLE:
-      return EncryptToEtype<double>(CreateEINTtypeStruct(), input_vector, message_t,
+      return EncryptToEtype<double>(CreateEINTtypeStruct(), input_vector, key_name_t, message_t,
                                     size, state, result);
     default:
       throw NotImplementedException("Unsupported numeric type for encryption");
     }
   } else if (vector_type.id() == LogicalTypeId::VARCHAR) {
-    return EncryptToEtype<string_t>(CreateEVARtypeStruct(), input_vector, message_t,
+    return EncryptToEtype<string_t>(CreateEVARtypeStruct(), input_vector, key_name_t, message_t,
                                     size, state, result);
   } else if (vector_type.IsNested()) {
     throw NotImplementedException(
@@ -393,10 +451,16 @@ static void DecryptDataFromEtype(DataChunk &args, ExpressionState &state,
 
   auto size = args.size();
   auto &input_vector = args.data[0];
-  auto &message_vector = args.data[1];
+
+  // Get the key_name and message from client input
+  auto &key_name_vector = args.data[1];
+  auto &message_vector = args.data[2];
   D_ASSERT(message_vector.GetVectorType() == VectorType::CONSTANT_VECTOR);
+  D_ASSERT(key_name_vector.GetVectorType() == VectorType::CONSTANT_VECTOR);
 
   // Fetch the message as a constant string
+  const string key_name_t =
+      ConstantVector::GetData<string_t>(key_name_vector)[0].GetString();
   const string message_t =
       ConstantVector::GetData<string_t>(message_vector)[0].GetString();
 
@@ -408,32 +472,32 @@ static void DecryptDataFromEtype(DataChunk &args, ExpressionState &state,
     switch (vector_type.id()) {
     case LogicalTypeId::TINYINT:
     case LogicalTypeId::UTINYINT:
-      return DecryptFromEtype<int8_t>(input_vector, message_t, size, state, result);
+      return DecryptFromEtype<int8_t>(input_vector, key_name_t, message_t, size, state, result);
     case LogicalTypeId::SMALLINT:
     case LogicalTypeId::USMALLINT:
-      return DecryptFromEtype<int16_t>(input_vector, message_t, size, state,
+      return DecryptFromEtype<int16_t>(input_vector, key_name_t, message_t, size, state,
                                        result);
     case LogicalTypeId::INTEGER:
-      return DecryptFromEtype<int32_t>(input_vector, message_t, size, state,
+      return DecryptFromEtype<int32_t>(input_vector, key_name_t, message_t, size, state,
                                        result);
     case LogicalTypeId::UINTEGER:
-      return DecryptFromEtype<uint32_t>(input_vector, message_t, size, state,
+      return DecryptFromEtype<uint32_t>(input_vector, key_name_t, message_t, size, state,
                                         result);
     case LogicalTypeId::BIGINT:
-      return DecryptFromEtype<int64_t>(input_vector, message_t, size, state,
+      return DecryptFromEtype<int64_t>(input_vector, key_name_t, message_t, size, state,
                                        result);
     case LogicalTypeId::UBIGINT:
-      return DecryptFromEtype<uint64_t>(input_vector, message_t, size, state,
+      return DecryptFromEtype<uint64_t>(input_vector, key_name_t, message_t, size, state,
                                         result);
     case LogicalTypeId::FLOAT:
-      return DecryptFromEtype<float>(input_vector, message_t, size, state, result);
+      return DecryptFromEtype<float>(input_vector, key_name_t, message_t, size, state, result);
     case LogicalTypeId::DOUBLE:
-      return DecryptFromEtype<double>(input_vector, message_t, size, state, result);
+      return DecryptFromEtype<double>(input_vector, key_name_t, message_t, size, state, result);
     default:
       throw NotImplementedException("Unsupported numeric type for decryption");
     }
   } else if (vector_type.id() == LogicalTypeId::VARCHAR) {
-    return EncryptToEtype<string_t>(CreateEVARtypeStruct(), input_vector, message_t,
+    return EncryptToEtype<string_t>(CreateEVARtypeStruct(), input_vector, key_name_t, message_t,
                                     size, state, result);
   } else if (vector_type.IsNested()) {
     throw NotImplementedException(
@@ -449,7 +513,7 @@ ScalarFunctionSet GetEncryptionStructFunction() {
 
   for (auto &type : LogicalType::AllTypes()) {
     set.AddFunction(
-        ScalarFunction({type, LogicalType::VARCHAR},
+        ScalarFunction({type, LogicalType::VARCHAR, LogicalType::VARCHAR},
                        LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                                             {"nonce_lo", LogicalType::UBIGINT},
                                             {"value", type}}),
@@ -469,7 +533,7 @@ ScalarFunctionSet GetDecryptionStructFunction() {
             {LogicalType::STRUCT({{"nonce_hi", nonce_type_a},
                                   {"nonce_lo", nonce_type_b},
                                   {"value", type}}),
-             LogicalType::VARCHAR},
+             LogicalType::VARCHAR, LogicalType::VARCHAR},
             type, DecryptDataFromEtype, EncryptFunctionData::EncryptBind));
       }
     }
