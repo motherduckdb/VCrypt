@@ -223,9 +223,21 @@ bool HasSpace(shared_ptr<SimpleEncryptionState> simple_encryption_state,
 
 
 void SetIV(shared_ptr<SimpleEncryptionState> simple_encryption_state) {
-  simple_encryption_state->iv[0] = simple_encryption_state->iv[1] = 0;
+  simple_encryption_state->iv[1] = 0;
   simple_encryption_state->encryption_state->GenerateRandomData(
       reinterpret_cast<data_ptr_t>(simple_encryption_state->iv), 12);
+}
+
+bool CheckGeneratedKeySize(const uint32_t size){
+
+  switch(size){
+  case 16:
+  case 24:
+  case 32:
+    return true;
+  default:
+    return false;
+  }
 }
 
 shared_ptr<EncryptionState> GetEncryptionState(ExpressionState &state) {
@@ -260,6 +272,8 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
     simple_encryption_state->key_flag = true;
   }
 
+  D_ASSERT(CheckGeneratedKeySize(simple_encryption_state->key.size()));
+
   // Reset the reference of the result vector
   Vector struct_vector(result_struct, size);
   result.ReferenceAndSetType(struct_vector);
@@ -274,15 +288,17 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
   auto &nonce_hi = children[0];
   nonce_hi->SetVectorType(VectorType::CONSTANT_VECTOR);
 
+  auto nonce_lo = simple_encryption_state->iv[1];
+
   using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
   using PLAINTEXT_TYPE = PrimitiveType<T>;
 
+  encryption_state->InitializeEncryption(
+      reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 16,
+      reinterpret_cast<const string *>(&simple_encryption_state->key));
+
   GenericExecutor::ExecuteUnary<PLAINTEXT_TYPE, ENCRYPTED_TYPE>(
       input_vector, result, size, [&](PLAINTEXT_TYPE input) {
-
-        // increment the low part of the nonce
-        simple_encryption_state->iv[1]++;
-        simple_encryption_state->counter++;
 
         encryption_state->InitializeEncryption(
             reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 16,
@@ -292,8 +308,12 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
             ProcessAndCastEncrypt(encryption_state, result, input.val,
                                   simple_encryption_state->buffer_p);
 
+        nonce_lo = simple_encryption_state->iv[1];
+        simple_encryption_state->counter++;
+        simple_encryption_state->iv[1]++;
+
         return ENCRYPTED_TYPE{simple_encryption_state->iv[0],
-                              simple_encryption_state->iv[1], encrypted_data};
+                              nonce_lo, encrypted_data};
       });
 }
 
@@ -311,6 +331,8 @@ void DecryptFromEtype(Vector &input_vector, const string message_t, uint64_t siz
     simple_encryption_state->key_flag = true;
   }
 
+  D_ASSERT(CheckGeneratedKeySize(simple_encryption_state->key.size()));
+
   using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
   using PLAINTEXT_TYPE = PrimitiveType<T>;
 
@@ -320,7 +342,7 @@ void DecryptFromEtype(Vector &input_vector, const string message_t, uint64_t siz
         simple_encryption_state->iv[1] = input.b_val;
 
         encryption_state->InitializeDecryption(
-            reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 16,
+            reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 12,
             reinterpret_cast<const string *>(&simple_encryption_state->key));
 
         T decrypted_data =
