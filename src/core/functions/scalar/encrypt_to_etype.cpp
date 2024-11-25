@@ -331,6 +331,9 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
   GenericExecutor::ExecuteUnary<PLAINTEXT_TYPE, ENCRYPTED_TYPE>(
       input_vector, result, size, [&](PLAINTEXT_TYPE input) {
 
+        simple_encryption_state->iv[1]++;
+        simple_encryption_state->counter++;
+
         encryption_state->InitializeEncryption(
             reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 16,
             reinterpret_cast<const string *>(&simple_encryption_state->key));
@@ -339,12 +342,8 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
             ProcessAndCastEncrypt(encryption_state, result, input.val,
                                   simple_encryption_state->buffer_p);
 
-        nonce_lo = simple_encryption_state->iv[1];
-        simple_encryption_state->counter++;
-        simple_encryption_state->iv[1]++;
-
         return ENCRYPTED_TYPE{simple_encryption_state->iv[0],
-                              nonce_lo, encrypted_data};
+                              simple_encryption_state->iv[1], encrypted_data};
       });
 }
 
