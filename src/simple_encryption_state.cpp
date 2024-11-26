@@ -1,4 +1,4 @@
-#define MAX_BUFFER_SIZE 1024
+#define MAX_BUFFER_SIZE 128
 #include "include/simple_encryption_state.hpp"
 #include "duckdb.hpp"
 #include "mbedtls_wrapper.hpp"
@@ -30,8 +30,7 @@ SimpleEncryptionState::SimpleEncryptionState(shared_ptr<ClientContext> context)
 
   // allocate encryption buffer
   // maybe do this in a better way (i.e. use buffer manager?)
-  uint8_t encryption_buffer[MAX_BUFFER_SIZE];
-  buffer_p = encryption_buffer;
+  buffer_p = static_cast<uint8_t *>(duckdb_malloc(MAX_BUFFER_SIZE));
 
   // clear the iv
   iv[0] = iv[1] = 0;

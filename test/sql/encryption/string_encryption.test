@@ -1,0 +1,43 @@
+# name: test/sql/secrets/secrets_encryption.test
+# description: Test secret creation for internal encryption
+# group: [simple-encryption/secrets]
+
+require simple_encryption
+
+# Ensure any currently stored secrets don't interfere with the test
+statement ok
+set allow_persistent_secrets=false;
+
+# Create an internal secret (for internal encryption of columns)
+statement ok
+CREATE SECRET key_1 (
+	TYPE ENCRYPTION,
+    MASTER_KEY '0123456789112345',
+    LENGTH 16
+);
+
+#statement ok
+#SELECT encrypt('testtest', 'key_1', 'random_message');
+
+statement ok
+CREATE TABLE rd_data AS
+    SELECT
+        SUBSTRING(MD5(RANDOM()::TEXT), 1, 5) AS rd_values
+    FROM
+        range(10);
+
+statement ok
+ALTER TABLE rd_data
+  ADD COLUMN encrypted_value VARCHAR;
+
+statement ok
+ALTER TABLE rd_data
+  ADD COLUMN decrypted_value VARCHAR;
+
+statement ok
+UPDATE rd_data
+SET encrypted_value = encrypt(rd_values, 'key_1', 'random_message');
+
+statement ok
+UPDATE rd_data
+SET decrypted_value = decrypt(encrypted_value, 'key_1', 'random_message');

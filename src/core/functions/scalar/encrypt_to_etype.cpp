@@ -61,6 +61,7 @@ ProcessAndCastEncrypt(shared_ptr<EncryptionState> encryption_state,
 
   // convert to Base64 into a newly allocated string in the result vector
   T base64_data = StringVector::EmptyString(*result_vector, base64_size);
+  memset(base64_data.GetDataWriteable(), 0, 12);
   Blob::ToBase64(encrypted_data, base64_data.GetDataWriteable());
 
   return base64_data;
@@ -113,7 +114,6 @@ shared_ptr<SimpleEncryptionState>
 GetSimpleEncryptionState(ExpressionState &state) {
 
   auto &info = GetEncryptionBindInfo(state);
-
   return info.context.registered_state->Get<SimpleEncryptionState>(
       "simple_encryption");
 }
@@ -309,6 +309,8 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
   Vector struct_vector(result_struct, size);
   result.ReferenceAndSetType(struct_vector);
 
+//  ValidityMask &result_validity = FlatVector::Validity(result);
+
   if ((simple_encryption_state->counter == 0) || (HasSpace(simple_encryption_state, size) == false)) {
     // generate new random IV and reset counter (if strart or if there is no space left)
     SetIV(simple_encryption_state);
@@ -345,6 +347,7 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
         return ENCRYPTED_TYPE{simple_encryption_state->iv[0],
                               simple_encryption_state->iv[1], encrypted_data};
       });
+
 }
 
 
