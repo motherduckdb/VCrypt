@@ -86,6 +86,8 @@ void AESStateSSL::SetEncryptionAlgorithm(string_t s_algorithm) {
 
 void AESStateSSL::GenerateRandomData(data_ptr_t data, idx_t len) {
   // generate random bytes for nonce
+  unsigned char seed[] = "my_custom_seed";
+  RAND_seed(seed, sizeof(seed));
   RAND_bytes(data, len);
 }
 
