@@ -32,7 +32,8 @@ set(EXTENSION_SOURCES
     src/core/functions/table/encrypt_table.cpp
     src/core/functions/secrets/authentication.cpp
     src/core/utils/simple_encryption_utils.cpp
-    src/core/crypto/crypto_primitives.cpp)
+    src/core/crypto/crypto_primitives.cpp
+    src/core/functions/common.cpp)
 
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
 build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
