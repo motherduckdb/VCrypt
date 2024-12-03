@@ -1,11 +1,42 @@
-# Simple_encryption
+# VCrypt
 
 This repository is based on https://github.com/duckdb/extension-template, check it out if you want to build and ship your own DuckDB extension.
 
 ---
 
-This extension, Simple_encryption, allow you to ... <extension_goal>.
+VCrypt, short for _vectorized encryption_, allows to efficiently encrypt and decrypt values within DuckDB. It is leveraging DuckDB compression methods to compress away metadata such as nonces, which are used to randomize the encryption. Because of its design, VCrypt often uses _vectorized processing_ to encrypt and decrypt values in batch.
 
+NB: this extension is under development and not stable yet
+
+## Usage
+
+### Key management
+
+Create a DuckDB secret;
+
+```
+CREATE SECRET key_name (
+    TYPE ENCRYPTION,
+    TOKEN 'secret_key'
+    LENGTH 16);
+```
+
+Supported key lenghts are 16, 24 and 32 bytes.
+
+### Encrypting and Decrypting
+
+Then Encrypt or Decrypt with:
+
+```
+encrypt(value, 'key_name', 'message')
+decrypt(value, 'key_name', 'message')
+```
+
+Message is (for now) used as a 'salt', to generate a new encryption key per value or per column that is encrypted. In future versions, we are implementing another mechanism to automatically generate columnar keys.
+
+### Notes
+
+We are now only supporting MBEDTLS/OPENSSL `AES-CTR`, but are working on supporting more encryption algorithms later.
 
 ## Building
 ### Managing dependencies
