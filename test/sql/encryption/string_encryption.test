@@ -1,6 +1,6 @@
-# name: test/sql/secrets/secrets_encryption.test
-# description: Test secret creation for internal encryption
-# group: [simple-encryption/secrets]
+# name: test/sql/secrets/string_encryption.test
+# description: Test encryption and decryption of strings
+# group: [simple-encryption/encryption]
 
 require simple_encryption
 
@@ -12,7 +12,7 @@ set allow_persistent_secrets=false;
 statement ok
 CREATE SECRET key_1 (
 	TYPE ENCRYPTION,
-    MASTER_KEY '0123456789112345',
+    TOKEN '0123456789112345',
     LENGTH 16
 );
 
@@ -28,7 +28,7 @@ CREATE TABLE rd_data AS
 
 statement ok
 ALTER TABLE rd_data
-  ADD COLUMN encrypted_value VARCHAR;
+  ADD COLUMN encrypted_value STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, value VARCHAR);
 
 statement ok
 ALTER TABLE rd_data
@@ -41,3 +41,5 @@ SET encrypted_value = encrypt(rd_values, 'key_1', 'random_message');
 statement ok
 UPDATE rd_data
 SET decrypted_value = decrypt(encrypted_value, 'key_1', 'random_message');
+
+# Here we get a segfault

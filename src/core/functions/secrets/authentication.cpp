@@ -67,7 +67,7 @@ static void AddSecretParameter(const std::string &key, const CreateSecretInput &
 
 
 static void RegisterCommonSecretParameters(CreateSecretFunction &function) {
-  function.named_parameters["master_key"] = LogicalType::VARCHAR;
+  function.named_parameters["token"] = LogicalType::VARCHAR;
   function.named_parameters["length"] = LogicalType::INTEGER;
 }
 
@@ -93,10 +93,10 @@ static unique_ptr<BaseSecret> CreateKeyEncryptionKey(ClientContext &context, Cre
   }
 
   // get the other results from the user input
-  auto master_key = input.options["master_key"].GetValue<std::string>();
+  auto token = input.options["token"].GetValue<std::string>();
 
   // Store the token in the secret
-  result->secret_map["token"] = Value(master_key);
+  result->secret_map["token"] = Value(token);
   result->secret_map["length"] = Value(to_string(length));
 
   // Hide (redact) sensitive information
