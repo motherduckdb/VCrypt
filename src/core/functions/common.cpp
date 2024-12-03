@@ -1,6 +1,8 @@
 #include "simple_encryption/common.hpp"
 #include "simple_encryption/core/functions/common.hpp"
 
+// Code adapted from spatial extension
+
 namespace simple_encryption {
 
 namespace core {
