@@ -11,9 +11,13 @@ SimpleEncryptionFunctionLocalState::SimpleEncryptionFunctionLocalState(ClientCon
   // clear IV
   iv[0] = iv[1] = 0;
 
+  // maybe generate iv_high also already in the bind
+
+  // for now do 512 bytes
   buffer_length = 512;
   encryption_buffer = arena.Allocate(buffer_length);
 
+  buffer_p = (data_ptr_t)encryption_buffer;
 }
 
 unique_ptr<FunctionLocalState>
