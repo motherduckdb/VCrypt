@@ -30,6 +30,7 @@ SimpleEncryptionState::SimpleEncryptionState(shared_ptr<ClientContext> context)
 
   // allocate encryption buffer
   // maybe do this in a better way (i.e. use buffer manager?)
+  // do this in local state and resize etc.
   buffer_p = static_cast<uint8_t *>(duckdb_malloc(MAX_BUFFER_SIZE));
 
   // clear the iv
