@@ -73,9 +73,6 @@ typename std::enable_if<std::is_same<T, string_t>::value, T>::type
 ProcessAndCastDecrypt(shared_ptr<EncryptionState> encryption_state,
                       Vector &result, T base64_data, uint8_t *buffer_p) {
 
-  auto &children = StructVector::GetEntries(result);
-  auto &result_vector = children[2];
-
   // first encrypt the bytes of the string into a temp buffer_p
   size_t encrypted_size = Blob::FromBase64Size(base64_data);
   size_t decrypted_size = encrypted_size;
@@ -85,7 +82,7 @@ ProcessAndCastDecrypt(shared_ptr<EncryptionState> encryption_state,
   D_ASSERT(encrypted_size <= base64_data.GetSize());
 
   string_t decrypted_data =
-      StringVector::EmptyString(*result_vector, decrypted_size);
+      StringVector::EmptyString(result, decrypted_size);
   encryption_state->Process(
       buffer_p, encrypted_size,
       reinterpret_cast<unsigned char *>(decrypted_data.GetDataWriteable()),
@@ -249,7 +246,8 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   auto simple_encryption_state = GetSimpleEncryptionState(state);
   auto encryption_state = GetEncryptionState(state);
 
-  D_ASSERT(CheckGeneratedKeySize(simple_encryption_state->key.size()));
+  // Get Key from Bind
+  auto key = GetKey(state);
 
   using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
   using PLAINTEXT_TYPE = PrimitiveType<T>;
@@ -261,7 +259,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
 
         encryption_state->InitializeDecryption(
             reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 12,
-            reinterpret_cast<const string *>(lstate.key));
+            reinterpret_cast<const string *>(key));
 
         T decrypted_data =
             ProcessAndCastDecrypt(encryption_state, result, input.c_val,
@@ -361,8 +359,7 @@ static void DecryptDataFromEtype(DataChunk &args, ExpressionState &state,
       throw NotImplementedException("Unsupported numeric type for decryption");
     }
   } else if (vector_type.id() == LogicalTypeId::VARCHAR) {
-    return EncryptToEtype<string_t>(CreateEVARtypeStruct(), input_vector,
-                                    size, state, result);
+    return DecryptFromEtype<string_t>(input_vector, size, state, result);
   } else if (vector_type.IsNested()) {
     throw NotImplementedException(
         "Nested types are not supported for decryption");
