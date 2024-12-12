@@ -13,7 +13,10 @@ public:
 
   idx_t buffer_length;
   uint64_t iv[2];
+
+  // todo: key can be 16, 24 or 32
   unsigned char key[16];
+  data_ptr_t buffer_p;
 
   void *encryption_buffer;
   bool initialized = false;

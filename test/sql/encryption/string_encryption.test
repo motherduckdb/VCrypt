@@ -36,10 +36,10 @@ ALTER TABLE rd_data
 
 statement ok
 UPDATE rd_data
-SET encrypted_value = encrypt(rd_values, 'key_1', 'random_message');
+SET encrypted_value = encrypt(rd_values, 'key_1');
 
 statement ok
 UPDATE rd_data
-SET decrypted_value = decrypt(encrypted_value, 'key_1', 'random_message');
+SET decrypted_value = decrypt(encrypted_value, 'key_1');
 
 # Here we get a segfault
