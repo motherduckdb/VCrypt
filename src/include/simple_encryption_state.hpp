@@ -15,6 +15,7 @@ public:
 public:
   shared_ptr<ClientContext> context_p;
   shared_ptr<EncryptionState> encryption_state;
+  shared_ptr<EncryptionUtil> encryption_util;
 
   // nonce metadata
   uint32_t counter = 0;

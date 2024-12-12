@@ -19,6 +19,7 @@
 #include "simple_encryption_state.hpp"
 #include "simple_encryption/core/types.hpp"
 #include "simple_encryption/core/crypto/crypto_primitives.hpp"
+#include "simple_encryption/core/functions/common.hpp"
 #include "simple_encryption/core/functions/scalar.hpp"
 #include "simple_encryption/core/functions/secrets.hpp"
 #include "simple_encryption/core/functions/scalar/encrypt.hpp"
@@ -107,7 +108,7 @@ ProcessAndCastDecrypt(shared_ptr<EncryptionState> encryption_state,
 
 EncryptFunctionData &GetEncryptionBindInfo(ExpressionState &state) {
   auto &func_expr = (BoundFunctionExpression &)state.expr;
-  return (EncryptFunctionData &)*func_expr.bind_info;;
+  return (EncryptFunctionData &)*func_expr.bind_info;
 }
 
 shared_ptr<SimpleEncryptionState>
@@ -116,6 +117,15 @@ GetSimpleEncryptionState(ExpressionState &state) {
   auto &info = GetEncryptionBindInfo(state);
   return info.context.registered_state->Get<SimpleEncryptionState>(
       "simple_encryption");
+}
+
+shared_ptr<EncryptionState> GetSimpleEncryptionStateLocal(ExpressionState &state) {
+  auto &info = GetEncryptionBindInfo(state);
+  // create a new local encryption state, but get the nonce etc. from the global state.
+  auto encryption_util = GetSimpleEncryptionState(state)->encryption_util;
+
+  return info.context.registered_state->Get<SimpleEncryptionState>(
+                                          "simple_encryption")->encryption_util->CreateEncryptionState();
 }
 
 const KeyValueSecret* GetSecret(ExpressionState &state) {
@@ -292,6 +302,13 @@ template <typename T>
 void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
                     const string key_name, const string message_t, uint64_t size, ExpressionState &state,
                     Vector &result) {
+
+  // Get the thread local state
+  auto &lstate = SimpleEncryptionFunctionLocalState::ResetAndGet(state);
+  auto &arena = lstate.arena;
+
+  // allocate buffer
+  arena.Allocate(sizeof(T));
 
   // this now happens for every chunk, maybe we should already put it in the bind
   auto simple_encryption_state = GetSimpleEncryptionState(state);
@@ -519,7 +536,7 @@ ScalarFunctionSet GetEncryptionStructFunction() {
                        LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                                             {"nonce_lo", LogicalType::UBIGINT},
                                             {"value", type}}),
-                       EncryptDataToEtype, EncryptFunctionData::EncryptBind));
+                       EncryptDataToEtype, EncryptFunctionData::EncryptBind, nullptr, nullptr, SimpleEncryptionFunctionLocalState::Init));
   }
 
   return set;
