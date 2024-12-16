@@ -32,7 +32,7 @@ namespace core {
 template <typename T>
 typename std::enable_if<
     std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
-ProcessAndCastEncrypt(shared_ptr<EncryptionState> encryption_state,
+ProcessVectorizedEncrypt(shared_ptr<EncryptionState> encryption_state,
                       Vector &result, T plaintext_data, uint8_t *buffer_p) {
   T encrypted_data;
   encryption_state->Process(
@@ -41,37 +41,11 @@ ProcessAndCastEncrypt(shared_ptr<EncryptionState> encryption_state,
   return encrypted_data;
 }
 
-template <typename T>
-typename std::enable_if<std::is_same<T, string_t>::value, T>::type
-ProcessAndCastEncrypt(shared_ptr<EncryptionState> encryption_state,
-                      Vector &result, T plaintext_data, uint8_t *buffer_p) {
-
-  auto &children = StructVector::GetEntries(result);
-  // take the third vector of the struct
-  auto &result_vector = children[2];
-
-  // first encrypt the bytes of the string into a temp buffer_p
-  auto input_data = data_ptr_t(plaintext_data.GetData());
-  auto value_size = plaintext_data.GetSize();
-  encryption_state->Process(input_data, value_size, buffer_p, value_size);
-
-  // Convert the encrypted data to Base64
-  auto encrypted_data =
-      string_t(reinterpret_cast<const char *>(buffer_p), value_size);
-  size_t base64_size = Blob::ToBase64Size(encrypted_data);
-
-  // convert to Base64 into a newly allocated string in the result vector
-  T base64_data = StringVector::EmptyString(*result_vector, base64_size);
-  memset(base64_data.GetDataWriteable(), 0, 12);
-  Blob::ToBase64(encrypted_data, base64_data.GetDataWriteable());
-
-  return base64_data;
-}
 
 template <typename T>
 typename std::enable_if<std::is_same<T, string_t>::value, T>::type
-ProcessEncrypt(shared_ptr<EncryptionState> encryption_state,
-                      Vector &result, T plaintext_data, uint8_t *buffer_p) {
+ProcessVectorizedEncrypt(shared_ptr<EncryptionState> encryption_state,
+               Vector &result, T plaintext_data, uint8_t *buffer_p) {
 
   auto &children = StructVector::GetEntries(result);
   auto &result_vector = children[2];
@@ -98,32 +72,10 @@ ProcessEncrypt(shared_ptr<EncryptionState> encryption_state,
 
 template <typename T>
 typename std::enable_if<std::is_same<T, string_t>::value, T>::type
-ProcessDecrypt(shared_ptr<EncryptionState> encryption_state,
-                      Vector &result, T base64_data, uint8_t *buffer_p) {
+ProcessVectorizedDecrypt(shared_ptr<EncryptionState> encryption_state,
+               Vector &result, T base64_data, uint8_t *buffer_p) {
 
-  // first encrypt the bytes of the string into a temp buffer_p
-  size_t encrypted_size = Blob::FromBase64Size(base64_data);
-  size_t decrypted_size = encrypted_size;
-  Blob::FromBase64(base64_data, reinterpret_cast<data_ptr_t>(buffer_p),
-                   encrypted_size);
-
-  D_ASSERT(encrypted_size <= base64_data.GetSize());
-
-  string_t decrypted_data =
-      StringVector::EmptyString(result, decrypted_size);
-  encryption_state->Process(
-      buffer_p, encrypted_size,
-      reinterpret_cast<unsigned char *>(decrypted_data.GetDataWriteable()),
-      decrypted_size);
-
-  return decrypted_data;
-}
-
-template <typename T>
-typename std::enable_if<std::is_same<T, string_t>::value, T>::type
-ProcessAndCastDecrypt(shared_ptr<EncryptionState> encryption_state,
-                      Vector &result, T base64_data, uint8_t *buffer_p) {
-
+  // we cann just fix the blob_size
   // first encrypt the bytes of the string into a temp buffer_p
   size_t encrypted_size = Blob::FromBase64Size(base64_data);
   size_t decrypted_size = encrypted_size;
@@ -145,7 +97,7 @@ ProcessAndCastDecrypt(shared_ptr<EncryptionState> encryption_state,
 template <typename T>
 typename std::enable_if<
     std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
-ProcessAndCastDecrypt(shared_ptr<EncryptionState> encryption_state,
+ProcessVectorizedDecrypt(shared_ptr<EncryptionState> encryption_state,
                       Vector &result, T encrypted_data, uint8_t *buffer_p) {
   T decrypted_data;
   encryption_state->Process(
@@ -245,7 +197,7 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
   Vector struct_vector(result_struct, size);
   result.ReferenceAndSetType(struct_vector);
 
-//  ValidityMask &result_validity = FlatVector::Validity(result);
+  //  ValidityMask &result_validity = FlatVector::Validity(result);
 
   if ((simple_encryption_state->counter == 0) || (HasSpace(simple_encryption_state, size) == false)) {
     // generate new random IV and reset counter (if strart or if there is no space left)
@@ -277,7 +229,7 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
             reinterpret_cast<const string *>(key));
 
         T encrypted_data =
-            ProcessAndCastEncrypt(encryption_state, result, input.val,
+            ProcessVectorizedEncrypt(encryption_state, result, input.val,
                                   lstate.buffer_p);
 
         return ENCRYPTED_TYPE{simple_encryption_state->iv[0],
@@ -313,7 +265,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
             reinterpret_cast<const string *>(key));
 
         T decrypted_data =
-            ProcessAndCastDecrypt(encryption_state, result, input.c_val,
+            ProcessVectorizedDecrypt(encryption_state, result, input.c_val,
                                   lstate.buffer_p);
         return decrypted_data;
       });
@@ -421,7 +373,7 @@ static void DecryptDataFromEtype(DataChunk &args, ExpressionState &state,
 }
 
 ScalarFunctionSet GetEncryptionStructFunction() {
-  ScalarFunctionSet set("encrypt");
+  ScalarFunctionSet set("encrypt_vectorized");
 
   for (auto &type : LogicalType::AllTypes()) {
     set.AddFunction(
@@ -436,7 +388,7 @@ ScalarFunctionSet GetEncryptionStructFunction() {
 }
 
 ScalarFunctionSet GetDecryptionStructFunction() {
-  ScalarFunctionSet set("decrypt");
+  ScalarFunctionSet set("decrypt_vectorized");
 
   for (auto &type : LogicalType::AllTypes()) {
     for (auto &nonce_type_a : LogicalType::Numeric()) {
@@ -451,9 +403,9 @@ ScalarFunctionSet GetDecryptionStructFunction() {
     }
 
     // TODO: Fix EINT encryption
-//      set.AddFunction(ScalarFunction({EncryptionTypes::E_INTEGER(),
-//      LogicalType::VARCHAR}, LogicalTypeId::INTEGER, DecryptDataFromEtype,
-//                                     EncryptFunctionData::EncryptBind));
+    //      set.AddFunction(ScalarFunction({EncryptionTypes::E_INTEGER(),
+    //      LogicalType::VARCHAR}, LogicalTypeId::INTEGER, DecryptDataFromEtype,
+    //                                     EncryptFunctionData::EncryptBind));
 
   }
 
