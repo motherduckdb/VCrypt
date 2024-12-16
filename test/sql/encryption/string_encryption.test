@@ -16,9 +16,6 @@ CREATE SECRET key_1 (
     LENGTH 16
 );
 
-#statement ok
-#SELECT encrypt('testtest', 'key_1', 'random_message');
-
 statement ok
 CREATE TABLE rd_data AS
     SELECT
