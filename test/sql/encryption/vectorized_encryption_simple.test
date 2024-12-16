@@ -1,0 +1,46 @@
+# name: test/sql/encryption/vectorized_encryption_simple.test
+# description: Test secret creation for internal encryption
+# group: [simple-encryption/secrets]
+
+require simple_encryption
+
+# Ensure any currently stored secrets don't interfere with the test
+statement ok
+set allow_persistent_secrets=false;
+
+# Create an internal secret (for internal encryption of columns)
+statement ok
+CREATE SECRET key_1 (
+	TYPE ENCRYPTION,
+    MASTER_KEY '0123456789112345',
+    LENGTH 16
+);
+
+statement ok
+CREATE TABLE test_1 AS SELECT 1 AS value FROM range(10000);
+
+statement ok
+ALTER TABLE test_1 ADD COLUMN encrypted_values STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, value INTEGER) DEFAULT (STRUCT_PACK(nonce_hi := 0, nonce_lo := 0, value := 0));
+
+statement ok
+ALTER TABLE test_1 ADD COLUMN decrypted_values INTEGER;
+
+statement ok
+UPDATE test_1 SET encrypted_values = encrypt(value, 'key_1', 'random_message');
+
+statement ok
+UPDATE test_1 SET decrypted_values = decrypt(encrypted_values, 'key_1', 'random_message');
+
+query I
+SELECT decrypted_values FROM test_1 LIMIT 10;
+----
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1

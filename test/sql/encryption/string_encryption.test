@@ -1,4 +1,4 @@
-# name: test/sql/secrets/string_encryption.test
+# name: test/sql/encryption/string_encryption.test
 # description: Test encryption and decryption of strings
 # group: [simple-encryption/encryption]
 
@@ -24,11 +24,11 @@ CREATE TABLE rd_data AS
     SELECT
         SUBSTRING(MD5(RANDOM()::TEXT), 1, 5) AS rd_values
     FROM
-        range(10);
+        range(5048);
 
 statement ok
 ALTER TABLE rd_data
-  ADD COLUMN encrypted_value STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, value VARCHAR);
+  ADD COLUMN encrypted_value STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, value VARCHAR) DEFAULT (STRUCT_PACK(nonce_hi := 0, nonce_lo := 0, value := 0));
 
 statement ok
 ALTER TABLE rd_data
