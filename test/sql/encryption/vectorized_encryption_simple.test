@@ -26,10 +26,10 @@ statement ok
 ALTER TABLE test_1 ADD COLUMN decrypted_values INTEGER;
 
 statement ok
-UPDATE test_1 SET encrypted_values = encrypt(value, 'key_1', 'random_message');
+UPDATE test_1 SET encrypted_values = encrypt_vectorized(value, 'key_1');
 
 statement ok
-UPDATE test_1 SET decrypted_values = decrypt(encrypted_values, 'key_1', 'random_message');
+UPDATE test_1 SET decrypted_values = decrypt_vectorized(encrypted_values, 'key_1');
 
 query I
 SELECT decrypted_values FROM test_1 LIMIT 10;
