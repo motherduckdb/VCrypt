@@ -12,12 +12,26 @@ SimpleEncryptionFunctionLocalState::SimpleEncryptionFunctionLocalState(ClientCon
   iv[0] = iv[1] = 0;
 
   // maybe generate iv_high also already in the bind
+  // allocate depending in sizeof(T) * items_in_vector
+  // maybe already in registering the function!
+  size_t data_size;
+  LogicalType type = bind_data->type;
 
-  // for now do 512 bytes
-  buffer_length = 512;
-  encryption_buffer = arena.Allocate(buffer_length);
+  // todo; fix this for all other types
+  if (type == LogicalType::VARCHAR) {
+    // allocate buffer for encrypted data
+    data_size = 512;
+  } else {
+    // maybe we can also just do per vector for certain types, so more then 128
+    data_size = GetTypeIdSize(type.InternalType()) * 128;
+  }
 
-  buffer_p = (data_ptr_t)encryption_buffer;
+  buffer_p = (data_ptr_t)arena.Allocate(data_size);
+
+  if (bind_data->type.id() == LogicalTypeId::VARCHAR) {
+    // allocate buffer for encrypted data
+    buffer_p = (data_ptr_t)arena.Allocate(128);
+  }
 }
 
 unique_ptr<FunctionLocalState>
@@ -25,9 +39,20 @@ SimpleEncryptionFunctionLocalState::Init(ExpressionState &state, const BoundFunc
   return make_uniq<SimpleEncryptionFunctionLocalState>(state.GetContext(), static_cast<EncryptFunctionData *>(bind_data));
 }
 
+SimpleEncryptionFunctionLocalState &SimpleEncryptionFunctionLocalState::Get(ExpressionState &state) {
+  auto &local_state = ExecuteFunctionState::GetFunctionState(state)->Cast<SimpleEncryptionFunctionLocalState>();
+  return local_state;
+}
+
 SimpleEncryptionFunctionLocalState &SimpleEncryptionFunctionLocalState::ResetAndGet(ExpressionState &state) {
   auto &local_state = ExecuteFunctionState::GetFunctionState(state)->Cast<SimpleEncryptionFunctionLocalState>();
   local_state.arena.Reset();
+  return local_state;
+}
+
+SimpleEncryptionFunctionLocalState &SimpleEncryptionFunctionLocalState::AllocateAndGet(ExpressionState &state, idx_t buffer_size) {
+  auto &local_state = ExecuteFunctionState::GetFunctionState(state)->Cast<SimpleEncryptionFunctionLocalState>();
+  local_state.arena.Allocate(buffer_size);
   return local_state;
 }
 

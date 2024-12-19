@@ -17,8 +17,6 @@
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
 #include "simple_encryption_state.hpp"
-#include "simple_encryption/core/types.hpp"
-#include "simple_encryption/core/crypto/crypto_primitives.hpp"
 #include "simple_encryption/core/functions/common.hpp"
 #include "simple_encryption/core/functions/scalar.hpp"
 #include "simple_encryption/core/functions/secrets.hpp"
@@ -29,213 +27,96 @@ namespace simple_encryption {
 
 namespace core {
 
-template <typename T>
-typename std::enable_if<
-    std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
-ProcessVectorizedEncrypt(shared_ptr<EncryptionState> encryption_state,
-                      Vector &result, T plaintext_data, uint8_t *buffer_p) {
-  T encrypted_data;
-  encryption_state->Process(
-      reinterpret_cast<unsigned char *>(&plaintext_data), sizeof(int32_t),
-      reinterpret_cast<unsigned char *>(&encrypted_data), sizeof(int32_t));
-  return encrypted_data;
-}
-
-
-template <typename T>
-typename std::enable_if<std::is_same<T, string_t>::value, T>::type
-ProcessVectorizedEncrypt(shared_ptr<EncryptionState> encryption_state,
-               Vector &result, T plaintext_data, uint8_t *buffer_p) {
-
-  auto &children = StructVector::GetEntries(result);
-  auto &result_vector = children[2];
-
-  // first encrypt the bytes of the string into a temp buffer_p
-  auto input_data = data_ptr_t(plaintext_data.GetData());
-  auto value_size = plaintext_data.GetSize();
-
-  encryption_state->Process(input_data, value_size, buffer_p, value_size);
-
-  // Convert the encrypted data to a BLOB
-  auto encrypted_data =
-      string_t(reinterpret_cast<const char *>(buffer_p), value_size);
-  size_t base64_size = Blob::ToBase64Size(encrypted_data);
-
-  // convert to Base64 into a newly allocated string in the result vector
-  T base64_data = StringVector::EmptyString(*result_vector, base64_size);
-  memset(base64_data.GetDataWriteable(), 0, 12);
-  Blob::ToBase64(encrypted_data, base64_data.GetDataWriteable());
-
-  return base64_data;
-}
-
-
-template <typename T>
-typename std::enable_if<std::is_same<T, string_t>::value, T>::type
-ProcessVectorizedDecrypt(shared_ptr<EncryptionState> encryption_state,
-               Vector &result, T base64_data, uint8_t *buffer_p) {
-
-  // we cann just fix the blob_size
-  // first encrypt the bytes of the string into a temp buffer_p
-  size_t encrypted_size = Blob::FromBase64Size(base64_data);
-  size_t decrypted_size = encrypted_size;
-  Blob::FromBase64(base64_data, reinterpret_cast<data_ptr_t>(buffer_p),
-                   encrypted_size);
-
-  D_ASSERT(encrypted_size <= base64_data.GetSize());
-
-  string_t decrypted_data =
-      StringVector::EmptyString(result, decrypted_size);
-  encryption_state->Process(
-      buffer_p, encrypted_size,
-      reinterpret_cast<unsigned char *>(decrypted_data.GetDataWriteable()),
-      decrypted_size);
-
-  return decrypted_data;
-}
-
-template <typename T>
-typename std::enable_if<
-    std::is_integral<T>::value || std::is_floating_point<T>::value, T>::type
-ProcessVectorizedDecrypt(shared_ptr<EncryptionState> encryption_state,
-                      Vector &result, T encrypted_data, uint8_t *buffer_p) {
-  T decrypted_data;
-  encryption_state->Process(
-      reinterpret_cast<unsigned char *>(&encrypted_data), sizeof(T),
-      reinterpret_cast<unsigned char *>(&decrypted_data), sizeof(T));
-  return decrypted_data;
-}
-
-EncryptFunctionData &GetEncryptionBindInfo(ExpressionState &state) {
-  auto &func_expr = (BoundFunctionExpression &)state.expr;
-  return (EncryptFunctionData &)*func_expr.bind_info;
-}
-
-shared_ptr<SimpleEncryptionState>
-GetSimpleEncryptionState(ExpressionState &state) {
-
-  auto &info = GetEncryptionBindInfo(state);
-  return info.context.registered_state->Get<SimpleEncryptionState>(
-      "simple_encryption");
-}
-
-// TODO; maybe pass by reference or so
-string* GetKey(ExpressionState &state) {
-  auto &info = GetEncryptionBindInfo(state);
-  return &info.key;
-}
-
-shared_ptr<EncryptionState> GetSimpleEncryptionStateLocal(ExpressionState &state) {
-  auto &info = GetEncryptionBindInfo(state);
-  // create a new local encryption state, but get the nonce etc. from the global state.
-  auto encryption_util = GetSimpleEncryptionState(state)->encryption_util;
-
-  return info.context.registered_state->Get<SimpleEncryptionState>(
-                                          "simple_encryption")->encryption_util->CreateEncryptionState();
-}
-
-bool HasSpace(shared_ptr<SimpleEncryptionState> simple_encryption_state,
-              uint64_t size) {
-  uint32_t max_value = ~0u;
-  if ((max_value - simple_encryption_state->counter) > size) {
-    return true;
-  }
-  return false;
-}
-
-
-void SetIV(shared_ptr<SimpleEncryptionState> simple_encryption_state) {
-  simple_encryption_state->iv[1] = 0;
-  simple_encryption_state->encryption_state->GenerateRandomData(
-      reinterpret_cast<data_ptr_t>(simple_encryption_state->iv), 12);
-}
-
-bool CheckGeneratedKeySize(const uint32_t size){
-
-  switch(size){
-  case 16:
-  case 24:
-  case 32:
-    return true;
-  default:
-    return false;
-  }
-}
-
-shared_ptr<EncryptionState> GetEncryptionState(ExpressionState &state) {
-  return GetSimpleEncryptionState(state)->encryption_state;
-}
-
-// todo; template
-LogicalType CreateEINTtypeStruct() {
+LogicalType CreateEncryptionStruct() {
   return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                               {"nonce_lo", LogicalType::UBIGINT},
-                              {"value", LogicalType::INTEGER}});
-}
-
-LogicalType CreateEVARtypeStruct() {
-  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-                              {"nonce_lo", LogicalType::UBIGINT},
-                              {"value", LogicalType::VARCHAR}});
+                              {"counter", LogicalType::UINTEGER},
+                              {"cipher", LogicalType::TINYINT},
+                              {"value", LogicalType::BLOB}});
 }
 
 template <typename T>
-void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
-                    uint64_t size, ExpressionState &state,
-                    Vector &result) {
+void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, Vector &result) {
 
+  // local, global and encryption state
   auto &lstate = SimpleEncryptionFunctionLocalState::ResetAndGet(state);
+  auto simple_encryption_state = VCryptBasicFun::GetSimpleEncryptionState(state);
+  auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
+  auto key = VCryptBasicFun::GetKey(state);
 
-  // this is the global state
-  auto simple_encryption_state = GetSimpleEncryptionState(state);
-  auto encryption_state = GetEncryptionState(state);
-
-  // Get Key from Bind
-  auto key = GetKey(state);
-
-  // Reset the reference of the result vector
-  Vector struct_vector(result_struct, size);
+  Vector struct_vector(CreateEncryptionStruct(), size);
   result.ReferenceAndSetType(struct_vector);
-
-  //  ValidityMask &result_validity = FlatVector::Validity(result);
-
-  if ((simple_encryption_state->counter == 0) || (HasSpace(simple_encryption_state, size) == false)) {
-    // generate new random IV and reset counter (if strart or if there is no space left)
-    SetIV(simple_encryption_state);
-    simple_encryption_state->counter = 0;
-  }
 
   auto &children = StructVector::GetEntries(result);
   auto &nonce_hi = children[0];
+  auto &nonce_lo = children[1];
+  auto &counter_vec = children[2];
+  auto &cipher_vec = children[3];
+
+  // result vector containing encrypted data
+  auto &blob = children[4];
+
+  // set the constant vectors
   nonce_hi->SetVectorType(VectorType::CONSTANT_VECTOR);
+  nonce_lo->SetVectorType(VectorType::CONSTANT_VECTOR);
 
-  auto nonce_lo = simple_encryption_state->iv[1];
+  auto nonce_hi_64 = simple_encryption_state->iv[0];
+  auto nonce_lo_32 = simple_encryption_state->iv[0];
 
-  using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
-  using PLAINTEXT_TYPE = PrimitiveType<T>;
+  // is not the pointer but really the actual value copied?
+  // Set constant vectors to a single value
+  nonce_hi->Reference(Value::UBIGINT(nonce_hi_64));
+  nonce_hi->Reference(Value::UBIGINT(nonce_lo_32));
 
-  encryption_state->InitializeEncryption(
-      reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 16,
-      reinterpret_cast<const string *>(key));
+  counter_vec->SetVectorType(VectorType::FLAT_VECTOR);
+  cipher_vec->SetVectorType(VectorType::FLAT_VECTOR);
 
-  GenericExecutor::ExecuteUnary<PLAINTEXT_TYPE, ENCRYPTED_TYPE>(
-      input_vector, result, size, [&](PLAINTEXT_TYPE input) {
+  // Set the blob vector to dict vector for compressed execution
+  blob->SetVectorType(VectorType::DICTIONARY_VECTOR);
 
-        simple_encryption_state->iv[1]++;
-        simple_encryption_state->counter++;
+  encryption_state->InitializeEncryption(reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 16, key);
 
-        encryption_state->InitializeEncryption(
-            reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 16,
-            reinterpret_cast<const string *>(key));
+  auto &blob_child = DictionaryVector::Child(*blob);
+  auto &blob_sel = DictionaryVector::SelVector(*blob);
 
-        T encrypted_data =
-            ProcessVectorizedEncrypt(encryption_state, result, input.val,
-                                  lstate.buffer_p);
+  // we process in batches of 128 values, or we can do it with all and cut at each 128 * sizeof(T) bits (only works for similar lengths)
+  // fill 512 bytes, so 512 / sizeof(T) values and at least 128 values.
+  // note: this only works for fixed-size types
+  auto batch_size = 128 * sizeof(T);
+  auto total_size = sizeof(T) * size;
+  // and the cipher
 
-        return ENCRYPTED_TYPE{simple_encryption_state->iv[0],
-                              simple_encryption_state->iv[1], encrypted_data};
-      });
+  // todo: assign buffer_p with the right size
+  encryption_state->Process(reinterpret_cast<const unsigned char*>(input_vector), total_size, lstate.buffer_p, total_size);
 
+  auto index = 0;
+  auto batch_nr = 0;
+  // get counter from local state
+  uint32_t counter = 0;
+  uint8_t cipher = 0;
+  const size_t step = sizeof(T) / 16;
+  uint64_t buffer_offset;
+
+  // TODO: for strings this all works slighly different
+  for(int i = 0; i + 128; i < (DEFAULT_STANDARD_VECTOR_SIZE / 128)){
+
+    buffer_offset = batch_nr * sizeof(T) * 128;
+    // Allocate space in the dictionary vector (i.e. blob_child)
+    string_t batch_data = StringVector::EmptyString(blob_child, batch_size); // value size
+    *(uint32_t*) batch_data.GetPrefixWriteable() = *(uint32_t *) lstate.buffer_p + buffer_offset;
+    memcpy(batch_data.GetDataWriteable(), lstate.buffer_p, batch_size);
+
+    // set index in selection vector
+    for (int j = 0; j++; j < 128){
+        cipher = j % step;
+        counter += (cipher == 0 && index != 0) ? 1 : 0;
+        cipher_vec->SetValue(index, Value::TINYINT(cipher));
+        counter_vec->SetValue(index, Value::UINTEGER(counter));
+        blob_sel.set_index(index, batch_nr);
+        index++;
+    }
+    batch_nr++;
+  }
 }
 
 
@@ -246,72 +127,77 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   // local state (contains key, buffer, iv etc.)
   auto &lstate = SimpleEncryptionFunctionLocalState::ResetAndGet(state);
   // global state
-  auto simple_encryption_state = GetSimpleEncryptionState(state);
-  auto encryption_state = GetEncryptionState(state);
+  auto simple_encryption_state = VCryptBasicFun::GetSimpleEncryptionState(state);
+  auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
 
   // Get Key from Bind
-  auto key = GetKey(state);
+  auto key = VCryptBasicFun::GetKey(state);
 
-  using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
-  using PLAINTEXT_TYPE = PrimitiveType<T>;
-
-  GenericExecutor::ExecuteUnary<ENCRYPTED_TYPE, PLAINTEXT_TYPE>(
-      input_vector, result, size, [&](ENCRYPTED_TYPE input) {
-        simple_encryption_state->iv[0] = input.a_val;
-        simple_encryption_state->iv[1] = input.b_val;
-
-        encryption_state->InitializeDecryption(
-            reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 12,
-            reinterpret_cast<const string *>(key));
-
-        T decrypted_data =
-            ProcessVectorizedDecrypt(encryption_state, result, input.c_val,
-                                  lstate.buffer_p);
-        return decrypted_data;
-      });
+//  using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
+//  using PLAINTEXT_TYPE = PrimitiveType<T>;
+//
+//  GenericExecutor::ExecuteUnary<ENCRYPTED_TYPE, PLAINTEXT_TYPE>(
+//      input_vector, result, size, [&](ENCRYPTED_TYPE input) {
+//        simple_encryption_state->iv[0] = input.a_val;
+//        simple_encryption_state->iv[1] = input.b_val;
+//
+//        encryption_state->InitializeDecryption(
+//            reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 12,
+//            reinterpret_cast<const string *>(key));
+//
+//        T decrypted_data =
+//            ProcessVectorizedDecrypt(encryption_state, result, input.c_val,
+//                                  lstate.buffer_p);
+//        return decrypted_data;
+//      });
 }
 
 
-static void EncryptDataToEtype(DataChunk &args, ExpressionState &state,
+static void EncryptDataVectorized(DataChunk &args, ExpressionState &state,
                                Vector &result) {
 
   auto &input_vector = args.data[0];
   auto vector_type = input_vector.GetType();
   auto size = args.size();
 
+  UnifiedVectorFormat vdata_input;
+  input_vector.ToUnifiedFormat(args.size(), vdata_input);
+  ValidityMask &result_validity = FlatVector::Validity(result);
+  auto vd = vdata_input.data;
+
   if (vector_type.IsNumeric()) {
     switch (vector_type.id()) {
     case LogicalTypeId::TINYINT:
     case LogicalTypeId::UTINYINT:
-      return EncryptToEtype<int8_t>(CreateEINTtypeStruct(), input_vector,
+      return EncryptVectorized<int8_t>((int8_t *)vdata_input.data,
                                     size, state, result);
     case LogicalTypeId::SMALLINT:
     case LogicalTypeId::USMALLINT:
-      return EncryptToEtype<int16_t>(CreateEINTtypeStruct(), input_vector,
+      return EncryptVectorized<int16_t>((int16_t *)vdata_input.data,
                                      size, state, result);
     case LogicalTypeId::INTEGER:
-      return EncryptToEtype<int32_t>(CreateEINTtypeStruct(), input_vector,
+      return EncryptVectorized<int32_t>((int32_t *)vdata_input.data,
                                      size, state, result);
     case LogicalTypeId::UINTEGER:
-      return EncryptToEtype<uint32_t>(CreateEINTtypeStruct(), input_vector,
+      return EncryptVectorized<uint32_t>((uint32_t *)vdata_input.data,
                                       size, state, result);
     case LogicalTypeId::BIGINT:
-      return EncryptToEtype<int64_t>(CreateEINTtypeStruct(), input_vector,
+      return EncryptVectorized<int64_t>((int64_t *)vdata_input.data,
                                      size, state, result);
     case LogicalTypeId::UBIGINT:
-      return EncryptToEtype<uint64_t>(CreateEINTtypeStruct(), input_vector,
+      return EncryptVectorized<uint64_t>((uint64_t *)vdata_input.data,
                                       size, state, result);
     case LogicalTypeId::FLOAT:
-      return EncryptToEtype<float>(CreateEINTtypeStruct(), input_vector,
+      return EncryptVectorized<float>((float *)vdata_input.data,
                                    size, state, result);
     case LogicalTypeId::DOUBLE:
-      return EncryptToEtype<double>(CreateEINTtypeStruct(), input_vector,
+      return EncryptVectorized<double>((double *)vdata_input.data,
                                     size, state, result);
     default:
       throw NotImplementedException("Unsupported numeric type for encryption");
     }
   } else if (vector_type.id() == LogicalTypeId::VARCHAR) {
-    return EncryptToEtype<string_t>(CreateEVARtypeStruct(), input_vector,
+    return EncryptVectorized<string_t>((string_t *)vdata_input.data,
                                     size, state, result);
   } else if (vector_type.IsNested()) {
     throw NotImplementedException(
@@ -323,7 +209,7 @@ static void EncryptDataToEtype(DataChunk &args, ExpressionState &state,
 }
 
 
-static void DecryptDataFromEtype(DataChunk &args, ExpressionState &state,
+static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
                                  Vector &result) {
 
   auto size = args.size();
@@ -372,7 +258,7 @@ static void DecryptDataFromEtype(DataChunk &args, ExpressionState &state,
   }
 }
 
-ScalarFunctionSet GetEncryptionStructFunction() {
+ScalarFunctionSet GetEncryptionVectorizedFunction() {
   ScalarFunctionSet set("encrypt_vectorized");
 
   for (auto &type : LogicalType::AllTypes()) {
@@ -381,13 +267,13 @@ ScalarFunctionSet GetEncryptionStructFunction() {
                        LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                                             {"nonce_lo", LogicalType::UBIGINT},
                                             {"value", type}}),
-                       EncryptDataToEtype, EncryptFunctionData::EncryptBind, nullptr, nullptr, SimpleEncryptionFunctionLocalState::Init));
+                       EncryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, SimpleEncryptionFunctionLocalState::Init));
   }
 
   return set;
 }
 
-ScalarFunctionSet GetDecryptionStructFunction() {
+ScalarFunctionSet GetDecryptionVectorizedFunction() {
   ScalarFunctionSet set("decrypt_vectorized");
 
   for (auto &type : LogicalType::AllTypes()) {
@@ -398,7 +284,7 @@ ScalarFunctionSet GetDecryptionStructFunction() {
                                   {"nonce_lo", nonce_type_b},
                                   {"value", type}}),
              LogicalType::VARCHAR},
-            type, DecryptDataFromEtype, EncryptFunctionData::EncryptBind, nullptr, nullptr, SimpleEncryptionFunctionLocalState::Init));
+            type, DecryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, SimpleEncryptionFunctionLocalState::Init));
       }
     }
 
@@ -416,10 +302,10 @@ ScalarFunctionSet GetDecryptionStructFunction() {
 // Register functions
 //------------------------------------------------------------------------------
 
-void CoreScalarFunctions::RegisterEncryptDataStructScalarFunction(
+void CoreScalarFunctions::RegisterEncryptVectorizedScalarFunction(
     DatabaseInstance &db) {
-  ExtensionUtil::RegisterFunction(db, GetEncryptionStructFunction());
-  ExtensionUtil::RegisterFunction(db, GetDecryptionStructFunction());
+  ExtensionUtil::RegisterFunction(db, GetEncryptionVectorizedFunction());
+  ExtensionUtil::RegisterFunction(db, GetDecryptionVectorizedFunction());
 }
 } // namespace core
 } // namespace simple_encryption

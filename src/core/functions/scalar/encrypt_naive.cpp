@@ -167,21 +167,6 @@ GetSimpleEncryptionState(ExpressionState &state) {
       "simple_encryption");
 }
 
-// TODO; maybe pass by reference or so
-string* GetKey(ExpressionState &state) {
-  auto &info = GetEncryptionBindInfo(state);
-  return &info.key;
-}
-
-shared_ptr<EncryptionState> GetSimpleEncryptionStateLocal(ExpressionState &state) {
-  auto &info = GetEncryptionBindInfo(state);
-  // create a new local encryption state, but get the nonce etc. from the global state.
-  auto encryption_util = GetSimpleEncryptionState(state)->encryption_util;
-
-  return info.context.registered_state->Get<SimpleEncryptionState>(
-                                          "simple_encryption")->encryption_util->CreateEncryptionState();
-}
-
 bool HasSpace(shared_ptr<SimpleEncryptionState> simple_encryption_state,
               uint64_t size) {
   uint32_t max_value = ~0u;
@@ -210,10 +195,6 @@ bool CheckGeneratedKeySize(const uint32_t size){
   }
 }
 
-shared_ptr<EncryptionState> GetEncryptionState(ExpressionState &state) {
-  return GetSimpleEncryptionState(state)->encryption_state;
-}
-
 // todo; template
 LogicalType CreateEINTtypeStruct() {
   return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
@@ -236,10 +217,10 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
 
   // this is the global state
   auto simple_encryption_state = GetSimpleEncryptionState(state);
-  auto encryption_state = GetEncryptionState(state);
+  auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
 
   // Get Key from Bind
-  auto key = GetKey(state);
+  auto key = VCryptBasicFun::GetKey(state);
 
   // Reset the reference of the result vector
   Vector struct_vector(result_struct, size);
@@ -295,10 +276,10 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   auto &lstate = SimpleEncryptionFunctionLocalState::ResetAndGet(state);
   // global state
   auto simple_encryption_state = GetSimpleEncryptionState(state);
-  auto encryption_state = GetEncryptionState(state);
+  auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
 
   // Get Key from Bind
-  auto key = GetKey(state);
+  auto key = VCryptBasicFun::GetKey(state);
 
   using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
   using PLAINTEXT_TYPE = PrimitiveType<T>;

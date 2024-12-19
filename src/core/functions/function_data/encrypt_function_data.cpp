@@ -15,7 +15,7 @@ struct KeyData {
 };
 
 unique_ptr<FunctionData> EncryptFunctionData::Copy() const {
-  return make_uniq<EncryptFunctionData>(context, key_name);
+  return make_uniq<EncryptFunctionData>(context, key_name, type);
 }
 
 bool EncryptFunctionData::Equals(const FunctionData &other_p) const {
@@ -64,6 +64,12 @@ EncryptFunctionData::EncryptBind(ClientContext &context,
                                  ScalarFunction &bound_function,
                                  vector<unique_ptr<Expression>> &arguments) {
 
+  auto &value = arguments[0];
+
+  if (arguments.size() != 2) {
+    throw BinderException("Encrypt Scalar Function requires two arguments");
+  }
+
   auto &key_child = arguments[1];
   if (key_child->HasParameter()) {
     throw ParameterNotResolvedException();
@@ -81,7 +87,7 @@ EncryptFunctionData::EncryptBind(ClientContext &context,
 
   auto key_name = StringUtil::Lower(key_str);
 
-  return make_uniq<EncryptFunctionData>(context, key_name);
+  return make_uniq<EncryptFunctionData>(context, key_name, value->return_type);
 }
 } // namespace core
 } // namespace simple_encryption
