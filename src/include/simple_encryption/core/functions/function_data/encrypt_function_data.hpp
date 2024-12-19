@@ -13,9 +13,10 @@ struct EncryptFunctionData : FunctionData {
   // Save the Key
   string key_name;
   string key;
+  LogicalType type;
   //  BoundStatement relation;
 
-  EncryptFunctionData(ClientContext &context, string key_name) : context(context), key_name(key_name) {
+  EncryptFunctionData(ClientContext &context, string key_name, LogicalType type) : context(context), key_name(key_name), type(type) {
     // generate encryption key and store
     key = GetKeyFromSecret(context, key_name);
   }

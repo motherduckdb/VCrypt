@@ -1,0 +1,28 @@
+# name: test/sql/bugfix_varchar_struct.test
+# description: test simple_struct_encryption extension
+# group: [simple_encryption]
+
+# Require statement will ensure this test is run with this extension loaded
+require simple_encryption
+
+load __TEST_DIR__/test.db
+
+statement ok
+create table tst(s struct(val blob));
+
+statement ok
+insert into tst select {'val':encode('01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678990123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234'|| cast(range >> 7 as string))} s from range(150000);
+
+statement ok
+select octet_length(s.val) len from tst;
+
+query I
+select compression, count(*) from pragma_storage_info('tst') where column_path='[0, 1]' group by 1;
+----
+1
+1
+1
+1
+
+#statement ok
+#from pragma_storage_info('tst') where row_group_id=0;

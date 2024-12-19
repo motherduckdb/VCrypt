@@ -15,15 +15,37 @@
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 #include "duckdb/common/types/blob.hpp"
 #include "duckdb/main/connection_manager.hpp"
-#include "simple_encryption/core/functions/scalar/encrypt.hpp"
-#include "simple_encryption/core/functions/scalar.hpp"
-#include "simple_encryption_state.hpp"
+#include "duckdb/common/encryption_state.hpp"
 #include "duckdb/main/client_context.hpp"
-#include "simple_encryption/core/functions/function_data/encrypt_function_data.hpp"
+
+#include "simple_encryption_state.hpp"
+#include "simple_encryption/core/functions/scalar.hpp"
+#include "simple_encryption/core/functions/scalar/encrypt.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 
 namespace simple_encryption {
 namespace core {
+
+EncryptFunctionData& VCryptBasicFun::GetEncryptionBindInfo(ExpressionState &state) {
+  auto &func_expr = (BoundFunctionExpression &)state.expr;
+  return (EncryptFunctionData &)*func_expr.bind_info;
+}
+
+shared_ptr<SimpleEncryptionState>
+VCryptBasicFun::GetSimpleEncryptionState(ExpressionState &state) {
+  auto &info = VCryptBasicFun::GetEncryptionBindInfo(state);
+  return info.context.registered_state->Get<SimpleEncryptionState>(
+      "simple_encryption");
+}
+// TODO; maybe pass by reference or so
+string* VCryptBasicFun::GetKey(ExpressionState &state) {
+  auto &info = VCryptBasicFun::GetEncryptionBindInfo(state);
+  return &info.key;
+}
+
+shared_ptr<EncryptionState> VCryptBasicFun::GetEncryptionState(ExpressionState &state) {
+  return VCryptBasicFun::GetSimpleEncryptionState(state)->encryption_state;
+}
 
 shared_ptr<EncryptionUtil> GetEncryptionUtil(ExpressionState &state) {
   auto &func_expr = (BoundFunctionExpression &)state.expr;

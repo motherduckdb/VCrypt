@@ -2,6 +2,7 @@
 
 #include "simple_encryption/common.hpp"
 #include "duckdb/common/encryption_state.hpp"
+#include "simple_encryption/core/functions/function_data/encrypt_function_data.hpp"
 
 #ifndef DUCKDB_AMALGAMATION
 #include "duckdb/storage/object_cache.hpp"
@@ -11,19 +12,17 @@ namespace simple_encryption {
 
 namespace core {
 
-class SimpleEncryptKeys : public ObjectCacheEntry {
+class VCryptBasicFun {
 
 public:
-  static SimpleEncryptKeys &Get(ClientContext &context);
+  // Fix this later
+  static VCryptBasicFun &Get(ClientContext &context);
 
 public:
-  void AddKey(const string &key_name, const string &key);
-  bool HasKey(const string &key_name) const;
-  const string &GetKey(const string &key_name) const;
-
-public:
-  static string ObjectType();
-  string GetObjectType() override;
+  static string* GetKey(ExpressionState &state);
+  static EncryptFunctionData &GetEncryptionBindInfo(ExpressionState &state);
+  static shared_ptr<SimpleEncryptionState> GetSimpleEncryptionState(ExpressionState &state);
+  static shared_ptr<EncryptionState> GetEncryptionState(ExpressionState &state);
 
 private:
   unordered_map<string, string> keys;
