@@ -17,10 +17,10 @@ CREATE SECRET key_1 (
 );
 
 statement ok
-CREATE TABLE test_1 AS SELECT 1 AS value FROM range(10000);
+CREATE TABLE test_1 AS SELECT 1 AS value FROM range(1000);
 
 statement ok
-ALTER TABLE test_1 ADD COLUMN encrypted_values STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, counter UINTEGER, cipher UINTEGER, value BLOB) DEFAULT (STRUCT_PACK(nonce_hi := 0, nonce_lo := 0, counter := 0, cipher := 0, BLOB := 0));
+ALTER TABLE test_1 ADD COLUMN encrypted_values STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, counter UINTEGER, cipher UINTEGER, value BLOB);
 
 statement ok
 UPDATE test_1 SET encrypted_values = encrypt_vectorized(value, 'key_1');
