@@ -266,7 +266,9 @@ ScalarFunctionSet GetEncryptionVectorizedFunction() {
         ScalarFunction({type, LogicalType::VARCHAR},
                        LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                                             {"nonce_lo", LogicalType::UBIGINT},
-                                            {"value", type}}),
+                                            {"counter", LogicalType::UINTEGER},
+                                            {"cipher", LogicalType::UINTEGER},
+                                            {"value", LogicalType::BLOB}}),
                        EncryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, SimpleEncryptionFunctionLocalState::Init));
   }
 
