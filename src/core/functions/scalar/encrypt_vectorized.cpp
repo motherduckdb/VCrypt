@@ -29,6 +29,18 @@ namespace simple_encryption {
 
 namespace core {
 
+uint8_t MaskCipher(uint8_t cipher, uint64_t *plaintext_bytes){
+    const uint64_t prime = 10251357202697351;
+    auto random_val = *plaintext_bytes * prime;
+
+    // mask the first 8 bits by shifting and cast to uint8_t
+    uint8_t masked_cipher = static_cast<uint8_t>((random_val) >> 56);
+    uint8_t result = cipher ^ masked_cipher;
+
+    // return XOR'ed cipher
+    return result;
+}
+
 LogicalType CreateEncryptionStruct() {
   return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                               {"nonce_lo", LogicalType::UBIGINT},
@@ -57,8 +69,10 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   auto &counter_vec = children[2];
   auto &cipher_vec = children[3];
 
-//  counter_vec->SetVectorType(VectorType::FLAT_VECTOR);
-//  cipher_vec->SetVectorType(VectorType::FLAT_VECTOR);
+  nonce_hi->SetVectorType(VectorType::CONSTANT_VECTOR);
+  nonce_lo->SetVectorType(VectorType::CONSTANT_VECTOR);
+  counter_vec->SetVectorType(VectorType::FLAT_VECTOR);
+  cipher_vec->SetVectorType(VectorType::FLAT_VECTOR);
 
   UnifiedVectorFormat nonce_hi_u;
   UnifiedVectorFormat nonce_lo_u;
@@ -75,77 +89,79 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
   auto cipher_vec_data = FlatVector::GetData<uint8_t>(*cipher_vec);
 
-  // set the nonces directly
-  nonce_hi_data[0] = vcrypt_state->iv[0];
-  nonce_lo_data[0] = vcrypt_state->iv[1];
+  // set nonce
+  nonce_hi_data[0] = 999;
+  nonce_lo_data[0] = 111;
 
-  nonce_hi->SetVectorType(VectorType::CONSTANT_VECTOR);
-  nonce_lo->SetVectorType(VectorType::CONSTANT_VECTOR);
-
-  // result vector containing encrypted data
+  // result vector is a dict vector containing encrypted data
   auto &blob = children[4];
   SelectionVector sel(size);
   blob->Slice(*blob, sel, size);
 
   auto &blob_sel = DictionaryVector::SelVector(*blob);
   blob_sel.Initialize(size);
+
   auto &blob_child = DictionaryVector::Child(*blob);
   auto blob_child_data = FlatVector::GetData<string_t>(blob_child);
 
+  // also: fix IV in vcrypt_state
   encryption_state->InitializeEncryption(
       reinterpret_cast<const_data_ptr_t>(vcrypt_state->iv), 16, key);
 
-  // we process in batches of 128 values
-  // or we can do it with all and cut at each 128 * sizeof(T) bits (only works for similar lengths)
-  // fill 512 bytes, so 512 / sizeof(T) values and at least 128 values.
-  // note: this only works for fixed-size types
+  // we process in batches of 128 values, but encrypt in 1 go
+  // this will be dict or delta compressed
   auto to_process = size;
   auto total_size = sizeof(T) * size;
   uint32_t batch_size;
+
   if (to_process > BATCH_SIZE) {
     batch_size = BATCH_SIZE;
   } else {
     batch_size = to_process;
   }
-  auto batch_size_in_bytes = BATCH_SIZE * sizeof(T);
-  D_ASSERT(batch_size_in_bytes = 512);
 
-  // todo: assign buffer_p with the right size
+  auto batch_size_in_bytes = batch_size * sizeof(T);
+  uint64_t plaintext_bytes;
+
+  // todo: assign buffer_p with the right size (total_size)
+  // test if the good values are actually encrypted
   encryption_state->Process(
       reinterpret_cast<const unsigned char *>(input_vector), total_size,
       lstate.buffer_p, total_size);
 
   auto index = 0;
   auto batch_nr = 0;
-  uint32_t counter = 0;
-  uint8_t cipher = 0;
-  uint32_t step = sizeof(T) / 16;
   uint64_t buffer_offset;
 
-  // TODO: for strings this all works slightly different because the size is variable
+  // TODO: for strings this works different because the string size is variable
   while (to_process) {
     buffer_offset = batch_nr * batch_size_in_bytes;
+
+    // copy the first 64 bits of the input vector
+    // TODO: fix for edge case; resulting bytes are less then 64 bits (=8 bytes)
+    // TODO; fix why input_vector + buffer offset is not working
+    // memcpy(&plaintext_bytes, input_vector + buffer_offset, 8);
+    memcpy(&plaintext_bytes, input_vector, 8);
+
     blob_child_data[batch_nr] =
         StringVector::EmptyString(blob_child, batch_size_in_bytes);
     *(uint32_t *)blob_child_data[batch_nr].GetPrefixWriteable() =
         *(uint32_t *)lstate.buffer_p + buffer_offset;
-    memcpy(blob_child_data[batch_nr].GetDataWriteable(), lstate.buffer_p,
+    memcpy(blob_child_data[batch_nr].GetDataWriteable(), lstate.buffer_p + buffer_offset,
            batch_size);
 
     blob_child_data[batch_nr].Finalize();
 
     // set index in selection vector
     for (uint32_t j = 0; j < batch_size; j++) {
-
-      // do cipher + counter in 1. U32T
-      cipher = index % 128;
-      counter = index;
-      //        cipher = j % step;
-      //        counter += (cipher == 0 && index != 0) ? 1 : 0;
-      // todo; also fix this to blob_sel_data?
+      // set index of selection vector
       blob_sel.set_index(index, batch_nr);
-      cipher_vec_data[index] = batch_nr;
-      counter_vec_data[index] = counter;
+      // cipher contains the (masked) position in the block
+      // to calculate the offset: plain_cipher * sizeof(T)
+      auto cipher = MaskCipher(j, &plaintext_bytes);
+      cipher_vec_data[index] = cipher;
+      // counter is used to identify the delta of the nonce
+      counter_vec_data[index] = batch_nr;
       index++;
     }
 
@@ -209,6 +225,8 @@ static void EncryptDataVectorized(DataChunk &args, ExpressionState &state,
 
   UnifiedVectorFormat vdata_input;
   input_vector.ToUnifiedFormat(args.size(), vdata_input);
+
+  // TODO; fix and check validity
   ValidityMask &result_validity = FlatVector::Validity(result);
   auto vd = vdata_input.data;
 
