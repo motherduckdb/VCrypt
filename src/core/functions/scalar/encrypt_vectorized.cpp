@@ -30,6 +30,7 @@ namespace simple_encryption {
 namespace core {
 
 uint8_t MaskCipher(uint8_t cipher, uint64_t *plaintext_bytes){
+  // todo; insert nullability
     const uint64_t prime = 10251357202697351;
     auto random_val = *plaintext_bytes * prime;
 
@@ -108,8 +109,8 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   encryption_state->InitializeEncryption(
       reinterpret_cast<const_data_ptr_t>(vcrypt_state->iv), 16, key);
 
-  // we process in batches of 128 values, but encrypt in 1 go
-  // this will be dict or delta compressed
+  // todo; create separate function for strings
+  // we encrypt the whole vector in once
   auto to_process = size;
   auto total_size = sizeof(T) * size;
   uint32_t batch_size;
@@ -123,8 +124,6 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   auto batch_size_in_bytes = batch_size * sizeof(T);
   uint64_t plaintext_bytes;
 
-  // todo: assign buffer_p with the right size (total_size)
-  // test if the good values are actually encrypted
   encryption_state->Process(
       reinterpret_cast<const unsigned char *>(input_vector), total_size,
       lstate.buffer_p, total_size);
@@ -137,16 +136,22 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   while (to_process) {
     buffer_offset = batch_nr * batch_size_in_bytes;
 
-    // copy the first 64 bits of the input vector
+    // copy the first 64 bits of plaintext of each batch
     // TODO: fix for edge case; resulting bytes are less then 64 bits (=8 bytes)
-    // TODO; fix why input_vector + buffer offset is not working
-    // memcpy(&plaintext_bytes, input_vector + buffer_offset, 8);
-    memcpy(&plaintext_bytes, input_vector, 8);
+    auto processed = batch_nr * BATCH_SIZE;
+    memcpy(&plaintext_bytes, &input_vector[processed], sizeof(uint64_t));
 
     blob_child_data[batch_nr] =
         StringVector::EmptyString(blob_child, batch_size_in_bytes);
     *(uint32_t *)blob_child_data[batch_nr].GetPrefixWriteable() =
         *(uint32_t *)lstate.buffer_p + buffer_offset;
+
+    D_ASSERT(blob_child_data[batch_nr].GetDataWriteable() != nullptr);
+    D_ASSERT(lstate.buffer_p != nullptr);
+    D_ASSERT(reinterpret_cast<uintptr_t>(blob_child_data[batch_nr].GetDataWriteable()) % alignof(uint64_t) == 0);
+    D_ASSERT(reinterpret_cast<uintptr_t>(lstate.buffer_p + buffer_offset) % alignof(uint64_t) == 0);
+    D_ASSERT(batch_size <= blob_child_data[batch_nr].GetSize());
+
     memcpy(blob_child_data[batch_nr].GetDataWriteable(), lstate.buffer_p + buffer_offset,
            batch_size);
 
@@ -158,10 +163,11 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
       blob_sel.set_index(index, batch_nr);
       // cipher contains the (masked) position in the block
       // to calculate the offset: plain_cipher * sizeof(T)
-      auto cipher = MaskCipher(j, &plaintext_bytes);
-      cipher_vec_data[index] = cipher;
+      // todo; nullable
+      cipher_vec_data[index] = MaskCipher(j, &plaintext_bytes);
       // counter is used to identify the delta of the nonce
       counter_vec_data[index] = batch_nr;
+
       index++;
     }
 

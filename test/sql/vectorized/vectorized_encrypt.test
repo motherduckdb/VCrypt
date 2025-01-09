@@ -16,8 +16,9 @@ CREATE SECRET key_1 (
     LENGTH 16
 );
 
+#CREATE TABLE test_1 AS SELECT 1 AS value FROM range(1000);
 statement ok
-CREATE TABLE test_1 AS SELECT 1 AS value FROM range(1000);
+CREATE TABLE test_1 AS SELECT row_number() OVER () AS value FROM range(1000);
 
 statement ok
 ALTER TABLE test_1 ADD COLUMN encrypted_values STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, counter UINTEGER, cipher UINTEGER, value BLOB);
