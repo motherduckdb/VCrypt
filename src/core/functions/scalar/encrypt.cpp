@@ -31,10 +31,10 @@ EncryptFunctionData& VCryptBasicFun::GetEncryptionBindInfo(ExpressionState &stat
   return (EncryptFunctionData &)*func_expr.bind_info;
 }
 
-shared_ptr<SimpleEncryptionState>
-VCryptBasicFun::GetSimpleEncryptionState(ExpressionState &state) {
+shared_ptr<VCryptState>
+VCryptBasicFun::GetVCryptState(ExpressionState &state) {
   auto &info = VCryptBasicFun::GetEncryptionBindInfo(state);
-  return info.context.registered_state->Get<SimpleEncryptionState>(
+  return info.context.registered_state->Get<VCryptState>(
       "simple_encryption");
 }
 // TODO; maybe pass by reference or so
@@ -44,7 +44,7 @@ string* VCryptBasicFun::GetKey(ExpressionState &state) {
 }
 
 shared_ptr<EncryptionState> VCryptBasicFun::GetEncryptionState(ExpressionState &state) {
-  return VCryptBasicFun::GetSimpleEncryptionState(state)->encryption_state;
+  return VCryptBasicFun::GetVCryptState(state)->encryption_state;
 }
 
 shared_ptr<EncryptionUtil> GetEncryptionUtil(ExpressionState &state) {

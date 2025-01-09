@@ -36,7 +36,7 @@ static void LoadInternal(DatabaseInstance &instance) {
        ConnectionManager::Get(instance).GetConnectionList()) {
     connection->registered_state->Insert(
         "simple_encryption",
-        make_shared_ptr<SimpleEncryptionState>(connection));
+        make_shared_ptr<VCryptState>(connection));
   }
 }
 

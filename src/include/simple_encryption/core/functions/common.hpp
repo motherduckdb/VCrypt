@@ -6,7 +6,7 @@ namespace simple_encryption {
 
 namespace core {
 
-struct SimpleEncryptionFunctionLocalState : FunctionLocalState {
+struct VCryptFunctionLocalState : FunctionLocalState {
 public:
 
   ArenaAllocator arena;
@@ -21,13 +21,13 @@ public:
   bool initialized = false;
 
 public:
-  explicit SimpleEncryptionFunctionLocalState(ClientContext &context, EncryptFunctionData *bind_data);
+  explicit VCryptFunctionLocalState(ClientContext &context, EncryptFunctionData *bind_data);
   static unique_ptr<FunctionLocalState> Init(ExpressionState &state, const BoundFunctionExpression &expr,
                                              FunctionData *bind_data);
-  static SimpleEncryptionFunctionLocalState &Get(ExpressionState &state);
-  static SimpleEncryptionFunctionLocalState &ResetAndGet(ExpressionState &state);
-  static SimpleEncryptionFunctionLocalState &AllocateAndGet(ExpressionState &state, idx_t buffer_size);
-  static SimpleEncryptionFunctionLocalState &ResetKeyAndGet(ExpressionState &state);
+  static VCryptFunctionLocalState &Get(ExpressionState &state);
+  static VCryptFunctionLocalState &ResetAndGet(ExpressionState &state);
+  static VCryptFunctionLocalState &AllocateAndGet(ExpressionState &state, idx_t buffer_size);
+  static VCryptFunctionLocalState &ResetKeyAndGet(ExpressionState &state);
 };
 
 } // namespace core

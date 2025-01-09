@@ -159,15 +159,15 @@ EncryptFunctionData &GetEncryptionBindInfo(ExpressionState &state) {
   return (EncryptFunctionData &)*func_expr.bind_info;
 }
 
-shared_ptr<SimpleEncryptionState>
+shared_ptr<VCryptState>
 GetSimpleEncryptionState(ExpressionState &state) {
 
   auto &info = GetEncryptionBindInfo(state);
-  return info.context.registered_state->Get<SimpleEncryptionState>(
+  return info.context.registered_state->Get<VCryptState>(
       "simple_encryption");
 }
 
-bool HasSpace(shared_ptr<SimpleEncryptionState> simple_encryption_state,
+bool HasSpace(shared_ptr<VCryptState> simple_encryption_state,
               uint64_t size) {
   uint32_t max_value = ~0u;
   if ((max_value - simple_encryption_state->counter) > size) {
@@ -177,7 +177,7 @@ bool HasSpace(shared_ptr<SimpleEncryptionState> simple_encryption_state,
 }
 
 
-void SetIV(shared_ptr<SimpleEncryptionState> simple_encryption_state) {
+void SetIV(shared_ptr<VCryptState> simple_encryption_state) {
   simple_encryption_state->iv[1] = 0;
   simple_encryption_state->encryption_state->GenerateRandomData(
       reinterpret_cast<data_ptr_t>(simple_encryption_state->iv), 12);
@@ -213,7 +213,7 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
                     uint64_t size, ExpressionState &state,
                     Vector &result) {
 
-  auto &lstate = SimpleEncryptionFunctionLocalState::ResetAndGet(state);
+  auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
 
   // this is the global state
   auto simple_encryption_state = GetSimpleEncryptionState(state);
@@ -273,7 +273,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
                       ExpressionState &state, Vector &result) {
 
   // local state (contains key, buffer, iv etc.)
-  auto &lstate = SimpleEncryptionFunctionLocalState::ResetAndGet(state);
+  auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
   // global state
   auto simple_encryption_state = GetSimpleEncryptionState(state);
   auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
@@ -410,7 +410,7 @@ ScalarFunctionSet GetEncryptionStructFunction() {
                        LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                                             {"nonce_lo", LogicalType::UBIGINT},
                                             {"value", type}}),
-                       EncryptDataToEtype, EncryptFunctionData::EncryptBind, nullptr, nullptr, SimpleEncryptionFunctionLocalState::Init));
+                       EncryptDataToEtype, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
   }
 
   return set;
@@ -427,7 +427,7 @@ ScalarFunctionSet GetDecryptionStructFunction() {
                                   {"nonce_lo", nonce_type_b},
                                   {"value", type}}),
              LogicalType::VARCHAR},
-            type, DecryptDataFromEtype, EncryptFunctionData::EncryptBind, nullptr, nullptr, SimpleEncryptionFunctionLocalState::Init));
+            type, DecryptDataFromEtype, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
       }
     }
 
