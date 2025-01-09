@@ -3,6 +3,8 @@
 #include "simple_encryption/common.hpp"
 #include "duckdb/main/client_context.hpp"
 
+#define BATCH_SIZE 128
+
 namespace simple_encryption {
 namespace core {
 

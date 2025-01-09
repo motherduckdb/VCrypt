@@ -23,8 +23,6 @@
 #include "simple_encryption/core/functions/scalar/encrypt.hpp"
 #include "simple_encryption/core/functions/function_data/encrypt_function_data.hpp"
 
-#define BATCH_SIZE 128
-
 namespace simple_encryption {
 
 namespace core {
@@ -36,6 +34,7 @@ uint8_t MaskCipher(uint8_t cipher, uint64_t *plaintext_bytes, bool is_null){
     // mask the first 8 bits by shifting and cast to uint8_t
     uint8_t masked_cipher = static_cast<uint8_t>((random_val) >> 56);
 
+    // todo; shift 1 bit and set least sig. bit for better compression
     if (is_null) {
       cipher |= 0x80;  // set first bit to 1
     }
@@ -111,17 +110,16 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
       reinterpret_cast<const_data_ptr_t>(lstate.iv), 16, key);
 
   // todo; create separate function for strings
-  auto to_process = size;
+  lstate.to_process = size;
   auto total_size = sizeof(T) * size;
-  uint32_t batch_size;
 
-  if (to_process > BATCH_SIZE) {
-    batch_size = BATCH_SIZE;
+  if (lstate.to_process > BATCH_SIZE) {
+    lstate.batch_size = BATCH_SIZE;
   } else {
-    batch_size = to_process;
+    lstate.batch_size = lstate.to_process;
   }
 
-  auto batch_size_in_bytes = batch_size * sizeof(T);
+  lstate.batch_size_in_bytes = lstate.batch_size * sizeof(T);
   uint64_t plaintext_bytes;
 
   encryption_state->Process(
@@ -133,8 +131,8 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   uint64_t buffer_offset;
 
   // TODO: for strings this works different because the string size is variable
-  while (to_process) {
-    buffer_offset = batch_nr * batch_size_in_bytes;
+  while (lstate.to_process) {
+    buffer_offset = batch_nr * lstate.batch_size_in_bytes;
 
     // copy the first 64 bits of plaintext of each batch
     // TODO: fix for edge case; resulting bytes are less then 64 bits (=8 bytes)
@@ -142,7 +140,7 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
     memcpy(&plaintext_bytes, &input_vector[processed], sizeof(uint64_t));
 
     blob_child_data[batch_nr] =
-        StringVector::EmptyString(blob_child, batch_size_in_bytes);
+        StringVector::EmptyString(blob_child, lstate.batch_size_in_bytes);
     *(uint32_t *)blob_child_data[batch_nr].GetPrefixWriteable() =
         *(uint32_t *)lstate.buffer_p + buffer_offset;
 
@@ -150,15 +148,15 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
     D_ASSERT(lstate.buffer_p != nullptr);
     D_ASSERT(reinterpret_cast<uintptr_t>(blob_child_data[batch_nr].GetDataWriteable()) % alignof(uint64_t) == 0);
     D_ASSERT(reinterpret_cast<uintptr_t>(lstate.buffer_p + buffer_offset) % alignof(uint64_t) == 0);
-    D_ASSERT(batch_size <= blob_child_data[batch_nr].GetSize());
+    D_ASSERT(lstate.batch_size <= blob_child_data[batch_nr].GetSize());
 
     memcpy(blob_child_data[batch_nr].GetDataWriteable(), lstate.buffer_p + buffer_offset,
-           batch_size);
+           lstate.batch_size);
 
     blob_child_data[batch_nr].Finalize();
 
     // set index in selection vector
-    for (uint32_t j = 0; j < batch_size; j++) {
+    for (uint32_t j = 0; j < lstate.batch_size; j++) {
       // set index of selection vector
       blob_sel.set_index(index, batch_nr);
       // cipher contains the (masked) position in the block
@@ -174,17 +172,17 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
     batch_nr++;
 
     // todo: optimize
-    if (to_process > BATCH_SIZE) {
-      to_process -= BATCH_SIZE;
+    if (lstate.to_process > BATCH_SIZE) {
+      lstate.to_process -= BATCH_SIZE;
     } else {
       // processing finalized
-      to_process = 0;
+      lstate.to_process = 0;
       break;
     }
 
-    if (to_process < BATCH_SIZE) {
-      batch_size = to_process;
-      batch_size_in_bytes = to_process * sizeof(T);
+    if (lstate.to_process < BATCH_SIZE) {
+      lstate.batch_size = lstate.to_process;
+      lstate.batch_size_in_bytes = lstate.to_process * sizeof(T);
     }
   }
 }

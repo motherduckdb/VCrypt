@@ -29,6 +29,21 @@ namespace simple_encryption {
 
 namespace core {
 
+uint8_t UnMaskCipher(uint8_t cipher, uint64_t *plaintext_bytes, bool is_null){
+  const uint64_t prime = 10251357202697351;
+  auto random_val = *plaintext_bytes * prime;
+
+  // mask the first 8 bits by shifting and cast to uint8_t
+  uint8_t masked_cipher = static_cast<uint8_t>((random_val) >> 56);
+
+  // todo; shift 1 bit and set least sig. bit for better compression
+  if (is_null) {
+    cipher |= 0x80;  // set first bit to 1
+  }
+
+  return cipher ^ masked_cipher;
+}
+
 LogicalType CreateDecryptionStruct() {
   return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                               {"nonce_lo", LogicalType::UBIGINT},
@@ -41,27 +56,26 @@ template <typename T>
 void DecryptFromEtype(Vector &input_vector, uint64_t size,
                       ExpressionState &state, Vector &result) {
 
+  // todo; keep track with is_decrypted bitmap
+
   ValidityMask &result_validity = FlatVector::Validity(result);
   result.SetVectorType(VectorType::FLAT_VECTOR);
   auto result_data = FlatVector::GetData<T>(result);
 
   // local, global and encryption state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
-  // global state
   auto vcrypt_state = VCryptBasicFun::GetVCryptState(state);
   auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
   auto key = VCryptBasicFun::GetKey(state);
 
   // do we need to check the validity?
   D_ASSERT(input_vector.GetType() == LogicalTypeId::STRUCT);
-  // Get the children of the struct
+
   auto &children = StructVector::GetEntries(input_vector);
   auto &nonce_hi = children[0];
   auto &nonce_lo = children[1];
   auto &counter_vec = children[2];
   auto &cipher_vec = children[3];
-
-  D_ASSERT(counter_vec->GetVectorType() ==  VectorType::SEQUENCE_VECTOR || counter_vec->GetVectorType() == VectorType::DICTIONARY_VECTOR);
 
   UnifiedVectorFormat nonce_hi_u;
   UnifiedVectorFormat nonce_lo_u;
@@ -82,23 +96,45 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
     lstate.iv[1] = FlatVector::GetData<uint64_t>(*nonce_lo)[0];
   }
 
-  //  using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
-  //  using PLAINTEXT_TYPE = PrimitiveType<T>;
-  //
-  //  GenericExecutor::ExecuteUnary<ENCRYPTED_TYPE, PLAINTEXT_TYPE>(
-  //      input_vector, result, size, [&](ENCRYPTED_TYPE input) {
-  //        simple_encryption_state->iv[0] = input.a_val;
-  //        simple_encryption_state->iv[1] = input.b_val;
-  //
-  //        encryption_state->InitializeDecryption(
-  //            reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 12,
-  //            reinterpret_cast<const string *>(key));
-  //
-  //        T decrypted_data =
-  //            ProcessVectorizedDecrypt(encryption_state, result, input.c_val,
-  //                                  lstate.buffer_p);
-  //        return decrypted_data;
-  //      });
+  auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
+  uint32_t delta;
+
+  lstate.to_process = size;
+
+  if (lstate.to_process > BATCH_SIZE) {
+    lstate.batch_size = BATCH_SIZE;
+  } else {
+    lstate.batch_size = lstate.to_process;
+  }
+
+  // the encryption granularity is always 128 * sizeof(T)
+  // or is it always 512 bytes??
+  // we need to align this in the encryption
+  lstate.batch_size_in_bytes = sizeof(T) * BATCH_SIZE;
+
+  for(uint32_t j = 0; j < size; j++){
+
+    // todo; optimize with checking whether sequence vector?
+    // or optimize with vectorizing?
+
+    if (lstate.counter != counter_vec_data[j]) {
+      // recalculate counter and reset iv
+      lstate.counter = counter_vec_data[0];
+
+      // calculate and copy delta to last 4 bytes of iv
+      delta = lstate.counter * BATCH_SIZE;
+      memcpy(lstate.iv + 12, &delta, 4);
+
+      // (re)initialize encryption state
+      encryption_state->InitializeDecryption(
+          reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
+          reinterpret_cast<const string *>(key));
+    }
+
+    // todo; implement the actual vectorized decryption
+    // this is in batch_size or per value, should switch dynamically
+
+  }
 }
 
 
