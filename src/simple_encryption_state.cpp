@@ -19,6 +19,10 @@ shared_ptr<EncryptionUtil> GetEncryptionUtil(ClientContext &context_p) {
   }
 }
 
+uint32_t GenerateRandom(RandomEngine *engine) {
+  return engine->NextRandomInteger();
+}
+
 SimpleEncryptionState::SimpleEncryptionState(shared_ptr<ClientContext> context)
     : context_p(context) {
 
@@ -28,15 +32,15 @@ SimpleEncryptionState::SimpleEncryptionState(shared_ptr<ClientContext> context)
   // set pointer to encryption primitives (mbedtls or openssl)
   encryption_state = GetEncryptionUtil(*new_conn)->CreateEncryptionState();
 
-  // allocate encryption buffer
-  // maybe do this in a better way (i.e. use buffer manager?)
-  // do this in local state and resize etc.
-  buffer_p = static_cast<uint8_t *>(duckdb_malloc(MAX_BUFFER_SIZE));
+  // initialize IV with random data
+  // for now, fixed seed
+  RandomEngine random_engine(1);
 
-  // clear the iv
-  iv[0] = iv[1] = 0;
+  iv[0] = (static_cast<uint64_t>(GenerateRandom(&random_engine)) << 32) | GenerateRandom(&random_engine);
+  iv[1] = GenerateRandom(&random_engine);
 
   // Create a new table containing encryption metadata (nonce, tag)
+  // this is used for later
   auto query = new_conn->Query(
       "CREATE TABLE IF NOT EXISTS __simple_encryption_internal ("
       "nonce VARCHAR, "

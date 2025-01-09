@@ -29,17 +29,20 @@ namespace simple_encryption {
 
 namespace core {
 
-uint8_t MaskCipher(uint8_t cipher, uint64_t *plaintext_bytes){
-  // todo; insert nullability
+uint8_t MaskCipher(uint8_t cipher, uint64_t *plaintext_bytes, bool is_null){
     const uint64_t prime = 10251357202697351;
     auto random_val = *plaintext_bytes * prime;
 
     // mask the first 8 bits by shifting and cast to uint8_t
     uint8_t masked_cipher = static_cast<uint8_t>((random_val) >> 56);
-    uint8_t result = cipher ^ masked_cipher;
 
-    // return XOR'ed cipher
-    return result;
+    if (is_null) {
+      cipher |= 0x80;  // set first bit to 1
+    } else {
+      cipher &= 0x7F;  // Clear the first bit
+    }
+
+    return cipher ^ masked_cipher;
 }
 
 LogicalType CreateEncryptionStruct() {
@@ -91,8 +94,8 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   auto cipher_vec_data = FlatVector::GetData<uint8_t>(*cipher_vec);
 
   // set nonce
-  nonce_hi_data[0] = 999;
-  nonce_lo_data[0] = 111;
+  nonce_hi_data[0] = vcrypt_state->iv[0];
+  nonce_lo_data[0] = vcrypt_state->iv[1];
 
   // result vector is a dict vector containing encrypted data
   auto &blob = children[4];
@@ -110,7 +113,6 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
       reinterpret_cast<const_data_ptr_t>(vcrypt_state->iv), 16, key);
 
   // todo; create separate function for strings
-  // we encrypt the whole vector in once
   auto to_process = size;
   auto total_size = sizeof(T) * size;
   uint32_t batch_size;
@@ -163,8 +165,8 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
       blob_sel.set_index(index, batch_nr);
       // cipher contains the (masked) position in the block
       // to calculate the offset: plain_cipher * sizeof(T)
-      // todo; nullable
-      cipher_vec_data[index] = MaskCipher(j, &plaintext_bytes);
+      // todo; fix the is_null
+      cipher_vec_data[index] = MaskCipher(j, &plaintext_bytes, false);
       // counter is used to identify the delta of the nonce
       counter_vec_data[index] = batch_nr;
 
