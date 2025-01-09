@@ -222,8 +222,6 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
   auto &nonce_hi = children[0];
   nonce_hi->SetVectorType(VectorType::CONSTANT_VECTOR);
 
-  auto nonce_lo = lstate.iv[1];
-
   using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
   using PLAINTEXT_TYPE = PrimitiveType<T>;
 
