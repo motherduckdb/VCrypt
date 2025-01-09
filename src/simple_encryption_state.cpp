@@ -19,10 +19,6 @@ shared_ptr<EncryptionUtil> GetEncryptionUtil(ClientContext &context_p) {
   }
 }
 
-uint32_t GenerateRandom(RandomEngine *engine) {
-  return engine->NextRandomInteger();
-}
-
 VCryptState::VCryptState(shared_ptr<ClientContext> context)
     : context_p(context) {
 
@@ -31,13 +27,6 @@ VCryptState::VCryptState(shared_ptr<ClientContext> context)
 
   // set pointer to encryption primitives (mbedtls or openssl)
   encryption_state = GetEncryptionUtil(*new_conn)->CreateEncryptionState();
-
-  // initialize IV with random data
-  // for now, fixed seed
-  RandomEngine random_engine(1);
-
-  iv[0] = (static_cast<uint64_t>(GenerateRandom(&random_engine)) << 32) | GenerateRandom(&random_engine);
-  iv[1] = GenerateRandom(&random_engine);
 
   // Create a new table containing encryption metadata (nonce, tag)
   // this is used for later

@@ -167,20 +167,13 @@ GetSimpleEncryptionState(ExpressionState &state) {
       "simple_encryption");
 }
 
-bool HasSpace(shared_ptr<VCryptState> simple_encryption_state,
+bool HasSpace(shared_ptr<VCryptState> vcrypt_state,
               uint64_t size) {
   uint32_t max_value = ~0u;
-  if ((max_value - simple_encryption_state->counter) > size) {
+  if ((max_value - vcrypt_state->counter) > size) {
     return true;
   }
   return false;
-}
-
-
-void SetIV(shared_ptr<VCryptState> simple_encryption_state) {
-  simple_encryption_state->iv[1] = 0;
-  simple_encryption_state->encryption_state->GenerateRandomData(
-      reinterpret_cast<data_ptr_t>(simple_encryption_state->iv), 12);
 }
 
 bool CheckGeneratedKeySize(const uint32_t size){
@@ -213,10 +206,9 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
                     uint64_t size, ExpressionState &state,
                     Vector &result) {
 
+  // global, local and encryption state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
-
-  // this is the global state
-  auto simple_encryption_state = GetSimpleEncryptionState(state);
+  auto vcrypt_state = GetSimpleEncryptionState(state);
   auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
 
   // Get Key from Bind
@@ -226,43 +218,35 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
   Vector struct_vector(result_struct, size);
   result.ReferenceAndSetType(struct_vector);
 
-//  ValidityMask &result_validity = FlatVector::Validity(result);
-
-  if ((simple_encryption_state->counter == 0) || (HasSpace(simple_encryption_state, size) == false)) {
-    // generate new random IV and reset counter (if strart or if there is no space left)
-    SetIV(simple_encryption_state);
-    simple_encryption_state->counter = 0;
-  }
-
   auto &children = StructVector::GetEntries(result);
   auto &nonce_hi = children[0];
   nonce_hi->SetVectorType(VectorType::CONSTANT_VECTOR);
 
-  auto nonce_lo = simple_encryption_state->iv[1];
+  auto nonce_lo = lstate.iv[1];
 
   using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
   using PLAINTEXT_TYPE = PrimitiveType<T>;
 
   encryption_state->InitializeEncryption(
-      reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 16,
+      reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
       reinterpret_cast<const string *>(key));
 
   GenericExecutor::ExecuteUnary<PLAINTEXT_TYPE, ENCRYPTED_TYPE>(
       input_vector, result, size, [&](PLAINTEXT_TYPE input) {
 
-        simple_encryption_state->iv[1]++;
-        simple_encryption_state->counter++;
+        lstate.iv[1]++;
+        lstate.counter++;
 
         encryption_state->InitializeEncryption(
-            reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 16,
+            reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
             reinterpret_cast<const string *>(key));
 
         T encrypted_data =
             ProcessAndCastEncrypt(encryption_state, result, input.val,
                                   lstate.buffer_p);
 
-        return ENCRYPTED_TYPE{simple_encryption_state->iv[0],
-                              simple_encryption_state->iv[1], encrypted_data};
+        return ENCRYPTED_TYPE{lstate.iv[0],
+                              lstate.iv[1], encrypted_data};
       });
 
 }
@@ -275,7 +259,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   // local state (contains key, buffer, iv etc.)
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
   // global state
-  auto simple_encryption_state = GetSimpleEncryptionState(state);
+  auto vcrypt_state = GetSimpleEncryptionState(state);
   auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
 
   // Get Key from Bind
@@ -286,11 +270,11 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
 
   GenericExecutor::ExecuteUnary<ENCRYPTED_TYPE, PLAINTEXT_TYPE>(
       input_vector, result, size, [&](ENCRYPTED_TYPE input) {
-        simple_encryption_state->iv[0] = input.a_val;
-        simple_encryption_state->iv[1] = input.b_val;
+        lstate.iv[0] = input.a_val;
+        lstate.iv[1] = input.b_val;
 
         encryption_state->InitializeDecryption(
-            reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 12,
+            reinterpret_cast<const_data_ptr_t>(lstate.iv), 12,
             reinterpret_cast<const string *>(key));
 
         T decrypted_data =
