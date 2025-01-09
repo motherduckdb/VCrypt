@@ -2,6 +2,7 @@
 
 #include "duckdb.hpp"
 #include "duckdb/common/encryption_state.hpp"
+#include "duckdb/common/random_engine.hpp"
 
 namespace duckdb {
 
