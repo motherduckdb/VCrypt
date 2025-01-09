@@ -18,12 +18,13 @@ SimpleEncryptionFunctionLocalState::SimpleEncryptionFunctionLocalState(ClientCon
   LogicalType type = bind_data->type;
 
   // todo; fix this for all other types
+  // todo; now it allocates per vector size, but for var-sized data this is tricky
   if (type == LogicalType::VARCHAR) {
     // allocate buffer for encrypted data
-    data_size = 512;
+    data_size = DEFAULT_STANDARD_VECTOR_SIZE;
   } else {
-    // maybe we can also just do per vector for certain types, so more then 128
-    data_size = GetTypeIdSize(type.InternalType()) * 128;
+    // todo; maybe we can also just do per vector for certain types, so more then 128
+    data_size = GetTypeIdSize(type.InternalType()) * DEFAULT_STANDARD_VECTOR_SIZE;
   }
 
   buffer_p = (data_ptr_t)arena.Allocate(data_size);
