@@ -41,14 +41,46 @@ template <typename T>
 void DecryptFromEtype(Vector &input_vector, uint64_t size,
                       ExpressionState &state, Vector &result) {
 
-  // local state (contains key, buffer, iv etc.)
+  ValidityMask &result_validity = FlatVector::Validity(result);
+  result.SetVectorType(VectorType::FLAT_VECTOR);
+  auto result_data = FlatVector::GetData<T>(result);
+
+  // local, global and encryption state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
   // global state
-  auto simple_encryption_state = VCryptBasicFun::GetVCryptState(state);
+  auto vcrypt_state = VCryptBasicFun::GetVCryptState(state);
   auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
-
-  // Get Key from Bind
   auto key = VCryptBasicFun::GetKey(state);
+
+  // do we need to check the validity?
+  D_ASSERT(input_vector.GetType() == LogicalTypeId::STRUCT);
+  // Get the children of the struct
+  auto &children = StructVector::GetEntries(input_vector);
+  auto &nonce_hi = children[0];
+  auto &nonce_lo = children[1];
+  auto &counter_vec = children[2];
+  auto &cipher_vec = children[3];
+
+  D_ASSERT(counter_vec->GetVectorType() ==  VectorType::SEQUENCE_VECTOR || counter_vec->GetVectorType() == VectorType::DICTIONARY_VECTOR);
+
+  UnifiedVectorFormat nonce_hi_u;
+  UnifiedVectorFormat nonce_lo_u;
+  UnifiedVectorFormat counter_vec_u;
+  UnifiedVectorFormat cipher_vec_u;
+
+  nonce_hi->ToUnifiedFormat(size, nonce_hi_u);
+  nonce_lo->ToUnifiedFormat(size, nonce_lo_u);
+  counter_vec->ToUnifiedFormat(size, counter_vec_u);
+  cipher_vec->ToUnifiedFormat(size, cipher_vec_u);
+
+  auto &value_vec = children[4];
+  D_ASSERT(value_vec->GetType() == LogicalTypeId::BLOB);
+
+  if ((nonce_hi->GetVectorType() == VectorType::CONSTANT_VECTOR) && (nonce_lo->GetVectorType() == VectorType::CONSTANT_VECTOR)) {
+    // set iv
+    lstate.iv[0] = FlatVector::GetData<uint64_t>(*nonce_hi)[0];
+    lstate.iv[1] = FlatVector::GetData<uint64_t>(*nonce_lo)[0];
+  }
 
   //  using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
   //  using PLAINTEXT_TYPE = PrimitiveType<T>;
@@ -75,10 +107,11 @@ static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
 
   auto size = args.size();
   auto &input_vector = args.data[0];
-
   auto &children = StructVector::GetEntries(input_vector);
+
   // get type of vector containing encrypted values
-  auto vector_type = children[2]->GetType();
+  // todo; we need to derive the type from E_type value...
+  auto vector_type = children[4]->GetType();
 
   if (vector_type.IsNumeric()) {
     switch (vector_type.id()) {

@@ -7,13 +7,17 @@ namespace simple_encryption {
 
 namespace core {
 
-VCryptFunctionLocalState::VCryptFunctionLocalState(ClientContext &context, EncryptFunctionData *bind_data) : arena(BufferAllocator::Get(context)) {
-  // clear IV
-  iv[0] = iv[1] = 0;
+uint32_t GenerateRandom(RandomEngine *engine) {
+  return engine->NextRandomInteger();
+}
 
-  // maybe generate iv_high also already in the bind
-  // allocate depending in sizeof(T) * items_in_vector
-  // maybe already in registering the function!
+VCryptFunctionLocalState::VCryptFunctionLocalState(ClientContext &context, EncryptFunctionData *bind_data) : arena(BufferAllocator::Get(context)) {
+  auto seed = 1;
+  RandomEngine random_engine(seed);
+
+  iv[0] = (static_cast<uint64_t>(GenerateRandom(&random_engine)) << 32) | GenerateRandom(&random_engine);
+  iv[1] = static_cast<uint64_t>(GenerateRandom(&random_engine)) << 32;
+
   size_t data_size;
   LogicalType type = bind_data->type;
 
@@ -23,7 +27,6 @@ VCryptFunctionLocalState::VCryptFunctionLocalState(ClientContext &context, Encry
     // allocate buffer for encrypted data
     data_size = DEFAULT_STANDARD_VECTOR_SIZE;
   } else {
-    // todo; maybe we can also just do per vector for certain types, so more then 128
     data_size = GetTypeIdSize(type.InternalType()) * DEFAULT_STANDARD_VECTOR_SIZE;
   }
 

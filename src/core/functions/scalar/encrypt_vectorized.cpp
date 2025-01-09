@@ -38,8 +38,6 @@ uint8_t MaskCipher(uint8_t cipher, uint64_t *plaintext_bytes, bool is_null){
 
     if (is_null) {
       cipher |= 0x80;  // set first bit to 1
-    } else {
-      cipher &= 0x7F;  // Clear the first bit
     }
 
     return cipher ^ masked_cipher;
@@ -94,8 +92,8 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   auto cipher_vec_data = FlatVector::GetData<uint8_t>(*cipher_vec);
 
   // set nonce
-  nonce_hi_data[0] = vcrypt_state->iv[0];
-  nonce_lo_data[0] = vcrypt_state->iv[1];
+  nonce_hi_data[0] = lstate.iv[0];
+  nonce_lo_data[0] = lstate.iv[1];
 
   // result vector is a dict vector containing encrypted data
   auto &blob = children[4];
@@ -110,7 +108,7 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
 
   // also: fix IV in vcrypt_state
   encryption_state->InitializeEncryption(
-      reinterpret_cast<const_data_ptr_t>(vcrypt_state->iv), 16, key);
+      reinterpret_cast<const_data_ptr_t>(lstate.iv), 16, key);
 
   // todo; create separate function for strings
   auto to_process = size;
