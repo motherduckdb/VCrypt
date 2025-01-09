@@ -21,7 +21,7 @@ public:
 public:
   static string* GetKey(ExpressionState &state);
   static EncryptFunctionData &GetEncryptionBindInfo(ExpressionState &state);
-  static shared_ptr<SimpleEncryptionState> GetSimpleEncryptionState(ExpressionState &state);
+  static shared_ptr<VCryptState> GetVCryptState(ExpressionState &state);
   static shared_ptr<EncryptionState> GetEncryptionState(ExpressionState &state);
 
 private:

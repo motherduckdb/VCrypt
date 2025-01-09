@@ -28,6 +28,7 @@ set(EXTENSION_SOURCES
     src/core/functions/scalar/encrypt.cpp
     src/core/functions/scalar/encrypt_naive.cpp
     src/core/functions/scalar/encrypt_vectorized.cpp
+    src/core/functions/scalar/decrypt_vectorized.cpp
     src/core/functions/function_data/encrypt_function_data.cpp
     src/core/functions/cast/varchar_cast.cpp
     src/core/functions/table/encrypt_table.cpp

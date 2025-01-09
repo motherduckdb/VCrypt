@@ -23,7 +23,7 @@ uint32_t GenerateRandom(RandomEngine *engine) {
   return engine->NextRandomInteger();
 }
 
-SimpleEncryptionState::SimpleEncryptionState(shared_ptr<ClientContext> context)
+VCryptState::VCryptState(shared_ptr<ClientContext> context)
     : context_p(context) {
 
   // create a new connection with the db
@@ -52,7 +52,7 @@ SimpleEncryptionState::SimpleEncryptionState(shared_ptr<ClientContext> context)
   }
 }
 
-void SimpleEncryptionState::QueryEnd() {
+void VCryptState::QueryEnd() {
   // clean up
 }
 } // namespace duckdb

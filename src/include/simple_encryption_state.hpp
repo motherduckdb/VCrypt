@@ -6,10 +6,10 @@
 
 namespace duckdb {
 
-class SimpleEncryptionState : public ClientContextState {
+class VCryptState : public ClientContextState {
 
 public:
-  explicit SimpleEncryptionState(shared_ptr<ClientContext> context);
+  explicit VCryptState(shared_ptr<ClientContext> context);
   void QueryEnd() override;
 
   // should we make this private?

@@ -57,9 +57,9 @@ template <typename T>
 void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, Vector &result) {
 
   // local, global and encryption state
-  auto &lstate = SimpleEncryptionFunctionLocalState::ResetAndGet(state);
+  auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
   auto vcrypt_state =
-      VCryptBasicFun::GetSimpleEncryptionState(state);
+      VCryptBasicFun::GetVCryptState(state);
 
   auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
   auto key = VCryptBasicFun::GetKey(state);
@@ -191,39 +191,6 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   }
 }
 
-template <typename T>
-void DecryptFromEtype(Vector &input_vector, uint64_t size,
-                      ExpressionState &state, Vector &result) {
-
-  // local state (contains key, buffer, iv etc.)
-  auto &lstate = SimpleEncryptionFunctionLocalState::ResetAndGet(state);
-  // global state
-  auto simple_encryption_state = VCryptBasicFun::GetSimpleEncryptionState(state);
-  auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
-
-  // Get Key from Bind
-  auto key = VCryptBasicFun::GetKey(state);
-
-//  using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
-//  using PLAINTEXT_TYPE = PrimitiveType<T>;
-//
-//  GenericExecutor::ExecuteUnary<ENCRYPTED_TYPE, PLAINTEXT_TYPE>(
-//      input_vector, result, size, [&](ENCRYPTED_TYPE input) {
-//        simple_encryption_state->iv[0] = input.a_val;
-//        simple_encryption_state->iv[1] = input.b_val;
-//
-//        encryption_state->InitializeDecryption(
-//            reinterpret_cast<const_data_ptr_t>(simple_encryption_state->iv), 12,
-//            reinterpret_cast<const string *>(key));
-//
-//        T decrypted_data =
-//            ProcessVectorizedDecrypt(encryption_state, result, input.c_val,
-//                                  lstate.buffer_p);
-//        return decrypted_data;
-//      });
-}
-
-
 static void EncryptDataVectorized(DataChunk &args, ExpressionState &state,
                                Vector &result) {
 
@@ -282,54 +249,6 @@ static void EncryptDataVectorized(DataChunk &args, ExpressionState &state,
 }
 
 
-static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
-                                 Vector &result) {
-
-  auto size = args.size();
-  auto &input_vector = args.data[0];
-
-  auto &children = StructVector::GetEntries(input_vector);
-  // get type of vector containing encrypted values
-  auto vector_type = children[2]->GetType();
-
-  if (vector_type.IsNumeric()) {
-    switch (vector_type.id()) {
-    case LogicalTypeId::TINYINT:
-    case LogicalTypeId::UTINYINT:
-      return DecryptFromEtype<int8_t>(input_vector, size, state, result);
-    case LogicalTypeId::SMALLINT:
-    case LogicalTypeId::USMALLINT:
-      return DecryptFromEtype<int16_t>(input_vector, size, state,
-                                       result);
-    case LogicalTypeId::INTEGER:
-      return DecryptFromEtype<int32_t>(input_vector, size, state,
-                                       result);
-    case LogicalTypeId::UINTEGER:
-      return DecryptFromEtype<uint32_t>(input_vector, size, state,
-                                        result);
-    case LogicalTypeId::BIGINT:
-      return DecryptFromEtype<int64_t>(input_vector, size, state,
-                                       result);
-    case LogicalTypeId::UBIGINT:
-      return DecryptFromEtype<uint64_t>(input_vector, size, state,
-                                        result);
-    case LogicalTypeId::FLOAT:
-      return DecryptFromEtype<float>(input_vector, size, state, result);
-    case LogicalTypeId::DOUBLE:
-      return DecryptFromEtype<double>(input_vector, size, state, result);
-    default:
-      throw NotImplementedException("Unsupported numeric type for decryption");
-    }
-  } else if (vector_type.id() == LogicalTypeId::VARCHAR) {
-    return DecryptFromEtype<string_t>(input_vector, size, state, result);
-  } else if (vector_type.IsNested()) {
-    throw NotImplementedException(
-        "Nested types are not supported for decryption");
-  } else if (vector_type.IsTemporal()) {
-    throw NotImplementedException(
-        "Temporal types are not supported for decryption");
-  }
-}
 
 ScalarFunctionSet GetEncryptionVectorizedFunction() {
   ScalarFunctionSet set("encrypt_vectorized");
@@ -342,32 +261,7 @@ ScalarFunctionSet GetEncryptionVectorizedFunction() {
                                             {"counter", LogicalType::UINTEGER},
                                             {"cipher", LogicalType::TINYINT},
                                             {"value", LogicalType::BLOB}}),
-                       EncryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, SimpleEncryptionFunctionLocalState::Init));
-  }
-
-  return set;
-}
-
-ScalarFunctionSet GetDecryptionVectorizedFunction() {
-  ScalarFunctionSet set("decrypt_vectorized");
-
-  for (auto &type : LogicalType::AllTypes()) {
-    for (auto &nonce_type_a : LogicalType::Numeric()) {
-      for (auto &nonce_type_b : LogicalType::Numeric()) {
-        set.AddFunction(ScalarFunction(
-            {LogicalType::STRUCT({{"nonce_hi", nonce_type_a},
-                                  {"nonce_lo", nonce_type_b},
-                                  {"value", type}}),
-             LogicalType::VARCHAR},
-            type, DecryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, SimpleEncryptionFunctionLocalState::Init));
-      }
-    }
-
-    // TODO: Fix EINT encryption
-    //      set.AddFunction(ScalarFunction({EncryptionTypes::E_INTEGER(),
-    //      LogicalType::VARCHAR}, LogicalTypeId::INTEGER, DecryptDataFromEtype,
-    //                                     EncryptFunctionData::EncryptBind));
-
+                       EncryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
   }
 
   return set;
@@ -380,7 +274,6 @@ ScalarFunctionSet GetDecryptionVectorizedFunction() {
 void CoreScalarFunctions::RegisterEncryptVectorizedScalarFunction(
     DatabaseInstance &db) {
   ExtensionUtil::RegisterFunction(db, GetEncryptionVectorizedFunction());
-  ExtensionUtil::RegisterFunction(db, GetDecryptionVectorizedFunction());
 }
 } // namespace core
 } // namespace simple_encryption

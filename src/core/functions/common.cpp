@@ -7,7 +7,7 @@ namespace simple_encryption {
 
 namespace core {
 
-SimpleEncryptionFunctionLocalState::SimpleEncryptionFunctionLocalState(ClientContext &context, EncryptFunctionData *bind_data) : arena(BufferAllocator::Get(context)) {
+VCryptFunctionLocalState::VCryptFunctionLocalState(ClientContext &context, EncryptFunctionData *bind_data) : arena(BufferAllocator::Get(context)) {
   // clear IV
   iv[0] = iv[1] = 0;
 
@@ -36,29 +36,29 @@ SimpleEncryptionFunctionLocalState::SimpleEncryptionFunctionLocalState(ClientCon
 }
 
 unique_ptr<FunctionLocalState>
-SimpleEncryptionFunctionLocalState::Init(ExpressionState &state, const BoundFunctionExpression &expr, FunctionData *bind_data) {
-  return make_uniq<SimpleEncryptionFunctionLocalState>(state.GetContext(), static_cast<EncryptFunctionData *>(bind_data));
+VCryptFunctionLocalState::Init(ExpressionState &state, const BoundFunctionExpression &expr, FunctionData *bind_data) {
+  return make_uniq<VCryptFunctionLocalState>(state.GetContext(), static_cast<EncryptFunctionData *>(bind_data));
 }
 
-SimpleEncryptionFunctionLocalState &SimpleEncryptionFunctionLocalState::Get(ExpressionState &state) {
-  auto &local_state = ExecuteFunctionState::GetFunctionState(state)->Cast<SimpleEncryptionFunctionLocalState>();
+VCryptFunctionLocalState &VCryptFunctionLocalState::Get(ExpressionState &state) {
+  auto &local_state = ExecuteFunctionState::GetFunctionState(state)->Cast<VCryptFunctionLocalState>();
   return local_state;
 }
 
-SimpleEncryptionFunctionLocalState &SimpleEncryptionFunctionLocalState::ResetAndGet(ExpressionState &state) {
-  auto &local_state = ExecuteFunctionState::GetFunctionState(state)->Cast<SimpleEncryptionFunctionLocalState>();
+VCryptFunctionLocalState &VCryptFunctionLocalState::ResetAndGet(ExpressionState &state) {
+  auto &local_state = ExecuteFunctionState::GetFunctionState(state)->Cast<VCryptFunctionLocalState>();
   local_state.arena.Reset();
   return local_state;
 }
 
-SimpleEncryptionFunctionLocalState &SimpleEncryptionFunctionLocalState::AllocateAndGet(ExpressionState &state, idx_t buffer_size) {
-  auto &local_state = ExecuteFunctionState::GetFunctionState(state)->Cast<SimpleEncryptionFunctionLocalState>();
+VCryptFunctionLocalState &VCryptFunctionLocalState::AllocateAndGet(ExpressionState &state, idx_t buffer_size) {
+  auto &local_state = ExecuteFunctionState::GetFunctionState(state)->Cast<VCryptFunctionLocalState>();
   local_state.arena.Allocate(buffer_size);
   return local_state;
 }
 
-SimpleEncryptionFunctionLocalState &SimpleEncryptionFunctionLocalState::ResetKeyAndGet(ExpressionState &state) {
-  auto &local_state = ExecuteFunctionState::GetFunctionState(state)->Cast<SimpleEncryptionFunctionLocalState>();
+VCryptFunctionLocalState &VCryptFunctionLocalState::ResetKeyAndGet(ExpressionState &state) {
+  auto &local_state = ExecuteFunctionState::GetFunctionState(state)->Cast<VCryptFunctionLocalState>();
   local_state.arena.Reset();
   return local_state;
 }

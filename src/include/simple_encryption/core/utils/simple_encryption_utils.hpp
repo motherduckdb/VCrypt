@@ -7,8 +7,8 @@ namespace simple_encryption {
 
 namespace core {
 
-// Function to get DuckPGQState from ClientContext
-shared_ptr<SimpleEncryptionState>
+// Get VCryptState from ClientContext
+shared_ptr<VCryptState>
 GetSimpleEncryptionState(ClientContext &context);
 } // namespace core
 
