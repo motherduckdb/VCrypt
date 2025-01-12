@@ -36,9 +36,9 @@ uint8_t UnMaskCipher(uint8_t cipher, uint64_t *plaintext_bytes, bool is_null){
   // mask the first 8 bits by shifting and cast to uint8_t
   uint8_t masked_cipher = static_cast<uint8_t>((random_val) >> 56);
 
-  // todo; shift 1 bit and set least sig. bit for better compression
+  // set lsb
   if (is_null) {
-    cipher |= 0x80;  // set first bit to 1
+    cipher = (cipher << 1) | (is_null ? 1 : 0);
   }
 
   return cipher ^ masked_cipher;
@@ -56,7 +56,7 @@ template <typename T>
 void DecryptFromEtype(Vector &input_vector, uint64_t size,
                       ExpressionState &state, Vector &result) {
 
-  // todo; keep track with is_decrypted bitmap
+  // todo; keep track with is_decrypted (bit)map
 
   ValidityMask &result_validity = FlatVector::Validity(result);
   result.SetVectorType(VectorType::FLAT_VECTOR);
@@ -89,6 +89,11 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
 
   auto &value_vec = children[4];
   D_ASSERT(value_vec->GetType() == LogicalTypeId::BLOB);
+  D_ASSERT(value_vec->GetVectorType() == VectorType::DICTIONARY_VECTOR);
+
+  // maybe we should avoid materializing...
+  UnifiedVectorFormat value_vec_u;
+  value_vec->ToUnifiedFormat(size, value_vec_u);
 
   if ((nonce_hi->GetVectorType() == VectorType::CONSTANT_VECTOR) && (nonce_lo->GetVectorType() == VectorType::CONSTANT_VECTOR)) {
     // set iv
