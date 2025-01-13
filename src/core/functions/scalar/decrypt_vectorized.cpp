@@ -62,6 +62,8 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
                       ExpressionState &state, Vector &result) {
 
   // todo; keep track with is_decrypted (bit)map
+
+  // TODO: SET VALIDITY!
   ValidityMask &result_validity = FlatVector::Validity(result);
   result.SetVectorType(VectorType::FLAT_VECTOR);
   auto result_data = FlatVector::GetData<T>(result);
@@ -149,7 +151,10 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
           lstate.batch_size_in_bytes);
 
       // copy first 64 bits for the cipher
+      // also check cipher
+      // if cipher != seq then its not in order and values need to be scattered
       memcpy(&plaintext_bytes, lstate.buffer_p, sizeof(uint64_t));
+      // do already multiplication here
 
       // count all similar counter values (optimize?)
       auto seq_size = 0;
@@ -158,6 +163,10 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
       }
 
       // todo; optimize vectorize
+      // check validity!! todo
+      // also check cipher
+      // if cipher != seq then its not in order and values need to be scattered
+
       uint32_t offset = 0;
       if ((seq_size + 1) * sizeof(T) == lstate.batch_size_in_bytes){
         // all values are in the same batch
@@ -168,6 +177,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
         }
         j += seq_size;
       } else {
+        // case: values are in same batch but not in original order... (how to check?)
         // case: part of values are in the same batch
         // or values are in different batches
         uint16_t position = UnMaskCipher(cipher_vec_data[j], &plaintext_bytes);
@@ -233,16 +243,25 @@ static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
 ScalarFunctionSet GetDecryptionVectorizedFunction() {
   ScalarFunctionSet set("decrypt_vectorized");
 
-  for (auto &type : LogicalType::AllTypes()) {
-        set.AddFunction(ScalarFunction(
-            {LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-                                  {"nonce_lo", LogicalType::UBIGINT},
-                                  {"counter", LogicalType::UINTEGER},
-                                  {"cipher", LogicalType::SMALLINT},
-                                  {"value", LogicalType::BLOB}}),
-             type},
-            type, DecryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
-  }
+  set.AddFunction(ScalarFunction(
+      {LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
+                            {"nonce_lo", LogicalType::UBIGINT},
+                            {"counter", LogicalType::UINTEGER},
+                            {"cipher", LogicalType::UINTEGER},
+                            {"value", LogicalType::BLOB}}),
+       LogicalType::VARCHAR}, LogicalType::UINTEGER,
+      DecryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
+
+//  for (auto &type : LogicalType::AllTypes()) {
+//        set.AddFunction(ScalarFunction(
+//            {LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
+//                                  {"nonce_lo", LogicalType::UBIGINT},
+//                                  {"counter", LogicalType::UINTEGER},
+//                                  {"cipher", LogicalType::SMALLINT},
+//                                  {"value", LogicalType::BLOB}}),
+//             LogicalType::VARCHAR}, type,
+//        DecryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
+//  }
 
   return set;
 }
@@ -251,7 +270,7 @@ ScalarFunctionSet GetDecryptionVectorizedFunction() {
 // Register functions
 //------------------------------------------------------------------------------
 
-void CoreScalarFunctions::RegisterEncryptVectorizedScalarFunction(
+void CoreScalarFunctions::RegisterDecryptVectorizedScalarFunction(
     DatabaseInstance &db) {
   ExtensionUtil::RegisterFunction(db, GetDecryptionVectorizedFunction());
 }
