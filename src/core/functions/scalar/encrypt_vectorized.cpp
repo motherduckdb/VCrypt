@@ -35,9 +35,7 @@ uint8_t MaskCipher(uint8_t cipher, uint64_t *plaintext_bytes, bool is_null){
     uint8_t masked_cipher = static_cast<uint8_t>((random_val) >> 56);
 
     // least significant bit indicates nullability
-    if (is_null) {
-      cipher = (cipher << 1) | (is_null ? 1 : 0);
-    }
+    cipher = (cipher << 1) | (is_null ? 1 : 0);
 
     return cipher ^ masked_cipher;
 }

@@ -29,19 +29,24 @@ namespace simple_encryption {
 
 namespace core {
 
-uint8_t UnMaskCipher(uint8_t cipher, uint64_t *plaintext_bytes, bool is_null){
+uint8_t UnMaskCipher(uint8_t cipher, uint64_t *plaintext_bytes){
   const uint64_t prime = 10251357202697351;
   auto random_val = *plaintext_bytes * prime;
 
   // mask the first 8 bits by shifting and cast to uint8_t
-  uint8_t masked_cipher = static_cast<uint8_t>((random_val) >> 56);
+  uint8_t mask = static_cast<uint8_t>((random_val) >> 56);
+  uint8_t unmasked_cipher = cipher ^ mask;
 
-  // set lsb
+  bool is_null = (unmasked_cipher & 1) != 0;
+
   if (is_null) {
-    cipher = (cipher << 1) | (is_null ? 1 : 0);
+    return NULL;
   }
 
-  return cipher ^ masked_cipher;
+  // remove lsb
+  cipher = unmasked_cipher >> 1;
+
+  return cipher;
 }
 
 LogicalType CreateDecryptionStruct() {
@@ -57,7 +62,6 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
                       ExpressionState &state, Vector &result) {
 
   // todo; keep track with is_decrypted (bit)map
-
   ValidityMask &result_validity = FlatVector::Validity(result);
   result.SetVectorType(VectorType::FLAT_VECTOR);
   auto result_data = FlatVector::GetData<T>(result);
