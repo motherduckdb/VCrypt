@@ -27,15 +27,15 @@ namespace simple_encryption {
 
 namespace core {
 
-uint8_t MaskCipher(uint8_t cipher, uint64_t *plaintext_bytes, bool is_null){
+uint16_t MaskCipher(uint16_t cipher, uint64_t *plaintext_bytes, bool is_null){
     const uint64_t prime = 10251357202697351;
-    auto random_val = *plaintext_bytes * prime;
+    uint64_t random_val = *plaintext_bytes * prime;
 
-    // mask the first 8 bits by shifting and cast to uint8_t
-    uint8_t masked_cipher = static_cast<uint8_t>((random_val) >> 56);
+    // mask the first 8 bits by shifting and cast to uint16_t
+    uint16_t masked_cipher = static_cast<uint16_t>((random_val) >> 56);
 
     // least significant bit indicates nullability
-    cipher = (cipher << 1) | (is_null ? 1 : 0);
+    cipher = static_cast<uint16_t>((cipher << 1) | (is_null ? 1 : 0));
 
     return cipher ^ masked_cipher;
 }
@@ -44,7 +44,7 @@ LogicalType CreateEncryptionStruct() {
   return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                               {"nonce_lo", LogicalType::UBIGINT},
                               {"counter", LogicalType::UINTEGER},
-                              {"cipher", LogicalType::TINYINT},
+                              {"cipher", LogicalType::SMALLINT},
                               {"value", LogicalType::BLOB}});
 }
 
@@ -86,7 +86,7 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   auto nonce_hi_data = FlatVector::GetData<uint64_t>(*nonce_hi);
   auto nonce_lo_data = FlatVector::GetData<uint32_t>(*nonce_lo);
   auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
-  auto cipher_vec_data = FlatVector::GetData<uint8_t>(*cipher_vec);
+  auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
 
   // set nonce
   nonce_hi_data[0] = lstate.iv[0];
@@ -253,7 +253,7 @@ ScalarFunctionSet GetEncryptionVectorizedFunction() {
                        LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                                             {"nonce_lo", LogicalType::UBIGINT},
                                             {"counter", LogicalType::UINTEGER},
-                                            {"cipher", LogicalType::TINYINT},
+                                            {"cipher", LogicalType::SMALLINT},
                                             {"value", LogicalType::BLOB}}),
                        EncryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
   }

@@ -29,13 +29,13 @@ namespace simple_encryption {
 
 namespace core {
 
-uint8_t UnMaskCipher(uint8_t cipher, uint64_t *plaintext_bytes){
+uint16_t UnMaskCipher(uint16_t cipher, uint64_t *plaintext_bytes){
   const uint64_t prime = 10251357202697351;
   auto random_val = *plaintext_bytes * prime;
 
-  // mask the first 8 bits by shifting and cast to uint8_t
-  uint8_t mask = static_cast<uint8_t>((random_val) >> 56);
-  uint8_t unmasked_cipher = cipher ^ mask;
+  // mask the first 8 bits by shifting and cast to uint16_t
+  uint16_t mask = static_cast<uint16_t>((random_val) >> 56);
+  uint16_t unmasked_cipher = cipher ^ mask;
 
   bool is_null = (unmasked_cipher & 1) != 0;
 
@@ -44,7 +44,7 @@ uint8_t UnMaskCipher(uint8_t cipher, uint64_t *plaintext_bytes){
   }
 
   // remove lsb
-  cipher = unmasked_cipher >> 1;
+  cipher = static_cast<uint16_t>(unmasked_cipher >> 1);
 
   return cipher;
 }
@@ -53,7 +53,7 @@ LogicalType CreateDecryptionStruct() {
   return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                               {"nonce_lo", LogicalType::UBIGINT},
                               {"counter", LogicalType::UINTEGER},
-                              {"cipher", LogicalType::TINYINT},
+                              {"cipher", LogicalType::SMALLINT},
                               {"value", LogicalType::BLOB}});
 }
 
@@ -98,14 +98,16 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   // maybe we should avoid materializing...
   UnifiedVectorFormat value_vec_u;
   value_vec->ToUnifiedFormat(size, value_vec_u);
+  auto value_vec_data = FlatVector::GetData<string_t>(*value_vec);
 
   if ((nonce_hi->GetVectorType() == VectorType::CONSTANT_VECTOR) && (nonce_lo->GetVectorType() == VectorType::CONSTANT_VECTOR)) {
-    // set iv
+    // Set IV
     lstate.iv[0] = FlatVector::GetData<uint64_t>(*nonce_hi)[0];
     lstate.iv[1] = FlatVector::GetData<uint64_t>(*nonce_lo)[0];
   }
 
   auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
+  auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
   uint32_t delta;
 
   lstate.to_process = size;
@@ -120,29 +122,60 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   // or is it always 512 bytes??
   // we need to align this in the encryption
   lstate.batch_size_in_bytes = sizeof(T) * BATCH_SIZE;
+  uint64_t plaintext_bytes;
 
+  // iterate through the whole vector
   for(uint32_t j = 0; j < size; j++){
 
-    // todo; optimize with checking whether sequence vector?
-    // or optimize with vectorizing?
-
+    // todo; optimize with vectorizing?
     if (lstate.counter != counter_vec_data[j]) {
       // recalculate counter and reset iv
-      lstate.counter = counter_vec_data[0];
+      lstate.counter = counter_vec_data[j];
 
       // calculate and copy delta to last 4 bytes of iv
-      delta = lstate.counter * BATCH_SIZE;
+      delta = lstate.counter * (BATCH_SIZE * sizeof(T) / 16);
       memcpy(lstate.iv + 12, &delta, 4);
 
       // (re)initialize encryption state
       encryption_state->InitializeDecryption(
           reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
           reinterpret_cast<const string *>(key));
+
+      // decrypt the whole batch
+      // todo; cache the decrypted plaintext
+      encryption_state->Process(
+          reinterpret_cast<const_data_ptr_t>(value_vec_data[j].GetData()), lstate.batch_size_in_bytes,
+          reinterpret_cast<unsigned char *>(lstate.buffer_p),
+          lstate.batch_size_in_bytes);
+
+      // copy first 64 bits for the cipher
+      memcpy(&plaintext_bytes, lstate.buffer_p, sizeof(uint64_t));
+
+      // count all similar counter values (optimize?)
+      auto seq_size = 0;
+      while(lstate.counter == counter_vec_data[j]){
+        seq_size++;
+      }
+
+      // todo; optimize vectorize
+      uint32_t offset = 0;
+      if ((seq_size + 1) * sizeof(T) == lstate.batch_size_in_bytes){
+        // all values are in the same batch
+        // copy the decrypted data to the result vector
+        for (uint32_t i = 0; i < (seq_size); i++) {
+          result_data[j] = Load<T>(lstate.buffer_p + offset);
+          offset += sizeof(T);
+        }
+        j += seq_size;
+      } else {
+        // case: part of values are in the same batch
+        // or values are in different batches
+        uint16_t position = UnMaskCipher(cipher_vec_data[j], &plaintext_bytes);
+        result_data[j] = Load<T>(lstate.buffer_p + position * sizeof(T));
+      }
+
+      j += seq_size;
     }
-
-    // todo; implement the actual vectorized decryption
-    // this is in batch_size or per value, should switch dynamically
-
   }
 }
 
@@ -205,7 +238,7 @@ ScalarFunctionSet GetDecryptionVectorizedFunction() {
             {LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                                   {"nonce_lo", LogicalType::UBIGINT},
                                   {"counter", LogicalType::UINTEGER},
-                                  {"cipher", LogicalType::TINYINT},
+                                  {"cipher", LogicalType::SMALLINT},
                                   {"value", LogicalType::BLOB}}),
              type},
             type, DecryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
