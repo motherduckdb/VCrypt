@@ -28,16 +28,18 @@ namespace simple_encryption {
 namespace core {
 
 uint16_t MaskCipher(uint16_t cipher, uint64_t *plaintext_bytes, bool is_null){
-    const uint64_t prime = 10251357202697351;
-    uint64_t random_val = *plaintext_bytes * prime;
-
-    // mask the first 8 bits by shifting and cast to uint16_t
-    uint16_t masked_cipher = static_cast<uint16_t>((random_val) >> 56);
-
-    // least significant bit indicates nullability
-    cipher = static_cast<uint16_t>((cipher << 1) | (is_null ? 1 : 0));
-
-    return cipher ^ masked_cipher;
+//    const uint64_t prime = 10251357202697351;
+//    auto const a_plaintext = plaintext_bytes + 1;
+//    uint64_t random_val = *a_plaintext * prime;
+//
+//    // mask the first 8 bits by shifting and cast to uint16_t
+//    uint16_t masked_cipher = static_cast<uint16_t>((random_val) >> 56);
+//
+//    // least significant bit indicates nullability
+//    cipher = static_cast<uint16_t>((cipher << 1) | (is_null ? 1 : 0));
+//
+//    return cipher ^ masked_cipher;
+    return cipher;
 }
 
 LogicalType CreateEncryptionStruct() {
@@ -51,12 +53,15 @@ LogicalType CreateEncryptionStruct() {
 template <typename T>
 void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, Vector &result) {
 
+  T test = input_vector[2];
+
   // local, global and encryption state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
   auto vcrypt_state =
       VCryptBasicFun::GetVCryptState(state);
 
   auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
+  // todo; fix key
   auto key = VCryptBasicFun::GetKey(state);
 
   Vector struct_vector(CreateEncryptionStruct(), size);
@@ -89,8 +94,8 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
 
   // set nonce
-  nonce_hi_data[0] = lstate.iv[0];
-  nonce_lo_data[0] = lstate.iv[1];
+  nonce_hi_data[0] = (static_cast<uint64_t>(lstate.iv[0]) << 32) | lstate.iv[1];
+  nonce_lo_data[0] = lstate.iv[2];
 
   // result vector is a dict vector containing encrypted data
   auto &blob = children[4];
@@ -108,13 +113,13 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
       reinterpret_cast<const_data_ptr_t>(lstate.iv), 16, key);
 
   // todo; create separate function for strings
-  lstate.to_process = size;
+  lstate.to_process_batch = size;
   auto total_size = sizeof(T) * size;
 
-  if (lstate.to_process > BATCH_SIZE) {
+  if (lstate.to_process_batch > BATCH_SIZE) {
     lstate.batch_size = BATCH_SIZE;
   } else {
-    lstate.batch_size = lstate.to_process;
+    lstate.batch_size = lstate.to_process_batch;
   }
 
   lstate.batch_size_in_bytes = lstate.batch_size * sizeof(T);
@@ -129,7 +134,7 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   uint64_t buffer_offset;
 
   // TODO: for strings this works different because the string size is variable
-  while (lstate.to_process) {
+  while (lstate.to_process_batch) {
     buffer_offset = batch_nr * lstate.batch_size_in_bytes;
 
     // copy the first 64 bits of plaintext of each batch
@@ -170,17 +175,17 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
     batch_nr++;
 
     // todo: optimize
-    if (lstate.to_process > BATCH_SIZE) {
-      lstate.to_process -= BATCH_SIZE;
+    if (lstate.to_process_batch > BATCH_SIZE) {
+      lstate.to_process_batch -= BATCH_SIZE;
     } else {
       // processing finalized
-      lstate.to_process = 0;
+      lstate.to_process_batch = 0;
       break;
     }
 
-    if (lstate.to_process < BATCH_SIZE) {
-      lstate.batch_size = lstate.to_process;
-      lstate.batch_size_in_bytes = lstate.to_process * sizeof(T);
+    if (lstate.to_process_batch < BATCH_SIZE) {
+      lstate.batch_size = lstate.to_process_batch;
+      lstate.batch_size_in_bytes = lstate.to_process_batch * sizeof(T);
     }
   }
 }

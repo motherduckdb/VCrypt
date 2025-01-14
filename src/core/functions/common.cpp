@@ -12,11 +12,15 @@ uint32_t GenerateRandom(RandomEngine *engine) {
 }
 
 VCryptFunctionLocalState::VCryptFunctionLocalState(ClientContext &context, EncryptFunctionData *bind_data) : arena(BufferAllocator::Get(context)) {
+
+  // currently for reproducability
   auto seed = 1;
   RandomEngine random_engine(seed);
 
-  iv[0] = (static_cast<uint64_t>(GenerateRandom(&random_engine)) << 32) | GenerateRandom(&random_engine);
-  iv[1] = static_cast<uint64_t>(GenerateRandom(&random_engine)) << 32;
+  iv[0] = GenerateRandom(&random_engine);
+  iv[1] = GenerateRandom(&random_engine);
+  iv[2] = GenerateRandom(&random_engine);
+  iv[3] = 0;
 
   size_t data_size;
   LogicalType type = bind_data->type;

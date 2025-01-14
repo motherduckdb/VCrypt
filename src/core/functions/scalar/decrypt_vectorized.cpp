@@ -30,22 +30,24 @@ namespace simple_encryption {
 namespace core {
 
 uint16_t UnMaskCipher(uint16_t cipher, uint64_t *plaintext_bytes){
-  const uint64_t prime = 10251357202697351;
-  auto random_val = *plaintext_bytes * prime;
+//  const uint64_t prime = 10251357202697351;
+//  auto const a_plaintext = plaintext_bytes + 1;
+//  auto random_val = *plaintext_bytes * prime;
 
   // mask the first 8 bits by shifting and cast to uint16_t
-  uint16_t mask = static_cast<uint16_t>((random_val) >> 56);
-  uint16_t unmasked_cipher = cipher ^ mask;
-
-  bool is_null = (unmasked_cipher & 1) != 0;
-
-  if (is_null) {
-    return NULL;
-  }
-
-  // remove lsb
-  cipher = static_cast<uint16_t>(unmasked_cipher >> 1);
-
+//  uint16_t mask = static_cast<uint16_t>((random_val) >> 56);
+//  uint16_t unmasked_cipher = cipher ^ mask;
+//
+//  bool is_null = (unmasked_cipher & 1) != 0;
+//
+//  if (is_null) {
+//    return NULL;
+//  }
+//
+//  // remove lsb
+//  cipher = static_cast<uint16_t>(unmasked_cipher >> 1);
+//
+//  return cipher;
   return cipher;
 }
 
@@ -63,6 +65,8 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
 
   // todo; keep track with is_decrypted (bit)map
 
+  T tmp2;
+
   // TODO: SET VALIDITY!
   ValidityMask &result_validity = FlatVector::Validity(result);
   result.SetVectorType(VectorType::FLAT_VECTOR);
@@ -75,7 +79,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   auto key = VCryptBasicFun::GetKey(state);
 
   // do we need to check the validity?
-  D_ASSERT(input_vector.GetType() == LogicalTypeId::STRUCT);
+  D_ASSERT(input_vector.GetType().id() == LogicalTypeId::STRUCT);
 
   auto &children = StructVector::GetEntries(input_vector);
   auto &nonce_hi = children[0];
@@ -94,30 +98,52 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   cipher_vec->ToUnifiedFormat(size, cipher_vec_u);
 
   auto &value_vec = children[4];
+
   D_ASSERT(value_vec->GetType() == LogicalTypeId::BLOB);
-  D_ASSERT(value_vec->GetVectorType() == VectorType::DICTIONARY_VECTOR);
+
+  // vec type is not dictionary...
+  // D_ASSERT(value_vec->GetVectorType() == VectorType::DICTIONARY_VECTOR);
 
   // maybe we should avoid materializing...
   UnifiedVectorFormat value_vec_u;
   value_vec->ToUnifiedFormat(size, value_vec_u);
   auto value_vec_data = FlatVector::GetData<string_t>(*value_vec);
 
-  if ((nonce_hi->GetVectorType() == VectorType::CONSTANT_VECTOR) && (nonce_lo->GetVectorType() == VectorType::CONSTANT_VECTOR)) {
-    // Set IV
-    lstate.iv[0] = FlatVector::GetData<uint64_t>(*nonce_hi)[0];
-    lstate.iv[1] = FlatVector::GetData<uint64_t>(*nonce_lo)[0];
-  }
+  auto nonce_hi_data = FlatVector::GetData<uint64_t>(*nonce_hi);
+  auto nonce_lo_data = FlatVector::GetData<uint32_t>(*nonce_lo);
+
+  lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[0] >> 32);;
+  lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[0] & 0xFFFFFFFF);
+  lstate.iv[2] = nonce_lo_data[0];
+  lstate.iv[3] = 0;
+
+  lstate.to_process_batch = size;
+
+  // fix later
+//  if ((nonce_hi->GetVectorType() != VectorType::CONSTANT_VECTOR) || (nonce_lo->GetVectorType() != VectorType::CONSTANT_VECTOR)) {
+//    uint32_t i = 0;
+//
+//    // loop through whole vector
+//    while (nonce_lo_data[i] == lstate.iv[2]) {
+//      i++;
+//    }
+//
+//    lstate.to_process_batch = i;
+//
+//  } else {
+//    lstate.to_process_batch = size;
+//  }
 
   auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
   auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
-  uint32_t delta;
 
-  lstate.to_process = size;
+  lstate.to_process_total = size;
 
-  if (lstate.to_process > BATCH_SIZE) {
-    lstate.batch_size = BATCH_SIZE;
-  } else {
-    lstate.batch_size = lstate.to_process;
+  // todo; this needs to be a loop not an assert
+  D_ASSERT(lstate.to_process_batch == lstate.to_process_total);
+
+  if (lstate.to_process_batch < BATCH_SIZE) {
+    lstate.batch_size = lstate.to_process_batch;
   }
 
   // the encryption granularity is always 128 * sizeof(T)
@@ -135,8 +161,10 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
       lstate.counter = counter_vec_data[j];
 
       // calculate and copy delta to last 4 bytes of iv
-      delta = lstate.counter * (BATCH_SIZE * sizeof(T) / 16);
-      memcpy(lstate.iv + 12, &delta, 4);
+      lstate.iv[3] = lstate.counter * (BATCH_SIZE * sizeof(T) / 16);
+
+      // fix; this is not correct yet
+      // memcpy(&lstate.iv[1] + 4, &delta, 4);
 
       // (re)initialize encryption state
       encryption_state->InitializeDecryption(
@@ -144,6 +172,8 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
           reinterpret_cast<const string *>(key));
 
       // decrypt the whole batch
+      auto data = value_vec_data[j].GetData();
+      auto datasize = value_vec_data[j].GetSize();
       // todo; cache the decrypted plaintext
       encryption_state->Process(
           reinterpret_cast<const_data_ptr_t>(value_vec_data[j].GetData()), lstate.batch_size_in_bytes,
@@ -160,6 +190,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
       auto seq_size = 0;
       while(lstate.counter == counter_vec_data[j]){
         seq_size++;
+        j++;
       }
 
       // todo; optimize vectorize
@@ -168,23 +199,24 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
       // if cipher != seq then its not in order and values need to be scattered
 
       uint32_t offset = 0;
-      if ((seq_size + 1) * sizeof(T) == lstate.batch_size_in_bytes){
+      if (seq_size == lstate.batch_size){
         // all values are in the same batch
         // copy the decrypted data to the result vector
-        for (uint32_t i = 0; i < (seq_size); i++) {
-          result_data[j] = Load<T>(lstate.buffer_p + offset);
+        for (uint32_t i = 0; i < seq_size; i++) {
+          T tmp = Load<T>(lstate.buffer_p + offset);
+          result_data[lstate.internal_counter] = Load<T>(lstate.buffer_p + offset);
+          // why is this 64 bit instead of 32?
           offset += sizeof(T);
+          lstate.internal_counter++;
         }
-        j += seq_size;
       } else {
         // case: values are in same batch but not in original order... (how to check?)
         // case: part of values are in the same batch
         // or values are in different batches
         uint16_t position = UnMaskCipher(cipher_vec_data[j], &plaintext_bytes);
-        result_data[j] = Load<T>(lstate.buffer_p + position * sizeof(T));
+        result_data[lstate.internal_counter] = Load<T>(lstate.buffer_p + position * sizeof(T));
+        lstate.internal_counter++;
       }
-
-      j += seq_size;
     }
   }
 }
@@ -197,9 +229,8 @@ static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
   auto &input_vector = args.data[0];
   auto &children = StructVector::GetEntries(input_vector);
 
-  // get type of vector containing encrypted values
-  // todo; we need to derive the type from E_type value...
-  auto vector_type = children[4]->GetType();
+  // get type of result vector
+  auto vector_type = result.GetType();
 
   if (vector_type.IsNumeric()) {
     switch (vector_type.id()) {
