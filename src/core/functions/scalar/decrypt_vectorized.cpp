@@ -60,12 +60,19 @@ LogicalType CreateDecryptionStruct() {
 }
 
 template <typename T>
+void DecryptInBatch(Vector &input_vector, uint64_t size,
+                      ExpressionState &state, Vector &result) {
+
+for (uint32_t i = 0; i < BATCH_SIZE; i++){
+  // decrypt in 1 go
+}
+}
+
+template <typename T>
 void DecryptFromEtype(Vector &input_vector, uint64_t size,
                       ExpressionState &state, Vector &result) {
 
   // todo; keep track with is_decrypted (bit)map
-
-  T tmp2;
 
   // TODO: SET VALIDITY!
   ValidityMask &result_validity = FlatVector::Validity(result);
@@ -101,7 +108,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
 
   D_ASSERT(value_vec->GetType() == LogicalTypeId::BLOB);
 
-  // vec type is not dictionary...
+  // vec type is not dictionary if never written to storage
   // D_ASSERT(value_vec->GetVectorType() == VectorType::DICTIONARY_VECTOR);
 
   // maybe we should avoid materializing...
@@ -153,27 +160,25 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   uint64_t plaintext_bytes;
 
   // iterate through the whole vector
-  for(uint32_t j = 0; j < size; j++){
+  // todo; optimize with vectorizing?
+//  for(uint32_t j = 0; j < size; j++) {
+//    result_data[j] = 1;
+//  }
 
-    // todo; optimize with vectorizing?
+  for(uint32_t j = 0; j < size; j++){
     if (lstate.counter != counter_vec_data[j]) {
-      // recalculate counter and reset iv
+      if (lstate.counter + 1 != counter_vec_data[j]){
+        // case: if counter is not sequential
+        // copy delta to last 4 bytes of iv
+        lstate.iv[3] = counter_vec_data[j] * (BATCH_SIZE * sizeof(T) / 16);
+        // (re)initialize encryption state
+        encryption_state->InitializeDecryption(
+            reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
+            reinterpret_cast<const string *>(key));
+      }
+
       lstate.counter = counter_vec_data[j];
 
-      // calculate and copy delta to last 4 bytes of iv
-      lstate.iv[3] = lstate.counter * (BATCH_SIZE * sizeof(T) / 16);
-
-      // fix; this is not correct yet
-      // memcpy(&lstate.iv[1] + 4, &delta, 4);
-
-      // (re)initialize encryption state
-      encryption_state->InitializeDecryption(
-          reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
-          reinterpret_cast<const string *>(key));
-
-      // decrypt the whole batch
-      auto data = value_vec_data[j].GetData();
-      auto datasize = value_vec_data[j].GetSize();
       // todo; cache the decrypted plaintext
       encryption_state->Process(
           reinterpret_cast<const_data_ptr_t>(value_vec_data[j].GetData()), lstate.batch_size_in_bytes,
@@ -182,7 +187,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
 
       // copy first 64 bits for the cipher
       // also check cipher
-      // if cipher != seq then its not in order and values need to be scattered
+      // if cipher != seq then it's not in order and values need to be scattered
       memcpy(&plaintext_bytes, lstate.buffer_p, sizeof(uint64_t));
       // do already multiplication here
 
@@ -203,21 +208,33 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
         // all values are in the same batch
         // copy the decrypted data to the result vector
         for (uint32_t i = 0; i < seq_size; i++) {
-          T tmp = Load<T>(lstate.buffer_p + offset);
-          result_data[lstate.internal_counter] = Load<T>(lstate.buffer_p + offset);
-          // why is this 64 bit instead of 32?
+          // is this internally stored as 32 bits?
+          result_data[lstate.index] = Load<T>(lstate.buffer_p + offset);
+          // memcpy(result_data + offset, lstate.buffer_p + offset, sizeof(T));
+
+#ifdef DEBUG
+          T temp = Load<T>(lstate.buffer_p + offset);
+          auto check = result_data[lstate.index];
+          D_ASSERT(temp == check);
+#endif
+          // why * 2???
+          auto sizet = sizeof(T);
           offset += sizeof(T);
-          lstate.internal_counter++;
+          lstate.index++;
         }
       } else {
         // case: values are in same batch but not in original order... (how to check?)
         // case: part of values are in the same batch
         // or values are in different batches
+        // problem; this is stored in a uint output
         uint16_t position = UnMaskCipher(cipher_vec_data[j], &plaintext_bytes);
-        result_data[lstate.internal_counter] = Load<T>(lstate.buffer_p + position * sizeof(T));
-        lstate.internal_counter++;
+        result_data[lstate.index] = Load<T>(lstate.buffer_p + position * sizeof(T));
+        lstate.index++;
       }
+      return;
     }
+
+
   }
 }
 
@@ -227,13 +244,18 @@ static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
 
   auto size = args.size();
   auto &input_vector = args.data[0];
+  auto temp_type = result.GetType();
+
+  // derive TypeID from the input vector
   auto &children = StructVector::GetEntries(input_vector);
+  auto &type_vec = children[5];
+  UnifiedVectorFormat type_vec_u;
+  type_vec->ToUnifiedFormat(size, type_vec_u);
+  auto type_vec_data = FlatVector::GetData<uint8_t>(*type_vec);
+  uint8_t type_id = static_cast<uint8_t>(type_vec_data[0]);
+  auto vector_type = LogicalTypeId(type_id);
 
-  // get type of result vector
-  auto vector_type = result.GetType();
-
-  if (vector_type.IsNumeric()) {
-    switch (vector_type.id()) {
+    switch (vector_type) {
     case LogicalTypeId::TINYINT:
     case LogicalTypeId::UTINYINT:
       return DecryptFromEtype<int8_t>(input_vector, size, state, result);
@@ -257,18 +279,12 @@ static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
       return DecryptFromEtype<float>(input_vector, size, state, result);
     case LogicalTypeId::DOUBLE:
       return DecryptFromEtype<double>(input_vector, size, state, result);
-    default:
-      throw NotImplementedException("Unsupported numeric type for decryption");
-    }
-  } else if (vector_type.id() == LogicalTypeId::VARCHAR) {
+    case LogicalTypeId::VARCHAR:
     return DecryptFromEtype<string_t>(input_vector, size, state, result);
-  } else if (vector_type.IsNested()) {
-    throw NotImplementedException(
-        "Nested types are not supported for decryption");
-  } else if (vector_type.IsTemporal()) {
-    throw NotImplementedException(
-        "Temporal types are not supported for decryption");
-  }
+
+    default:
+      throw NotImplementedException("Unsupported type for decryption");
+    }
 }
 
 ScalarFunctionSet GetDecryptionVectorizedFunction() {
@@ -279,7 +295,8 @@ ScalarFunctionSet GetDecryptionVectorizedFunction() {
                             {"nonce_lo", LogicalType::UBIGINT},
                             {"counter", LogicalType::UINTEGER},
                             {"cipher", LogicalType::UINTEGER},
-                            {"value", LogicalType::BLOB}}),
+                            {"value", LogicalType::BLOB},
+                            {"type", LogicalType::TINYINT}}),
        LogicalType::VARCHAR}, LogicalType::UINTEGER,
       DecryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
 
