@@ -47,13 +47,12 @@ LogicalType CreateEncryptionStruct() {
                               {"nonce_lo", LogicalType::UBIGINT},
                               {"counter", LogicalType::UINTEGER},
                               {"cipher", LogicalType::SMALLINT},
-                              {"value", LogicalType::BLOB}});
+                              {"value", LogicalType::BLOB},
+                              {"type", LogicalType::TINYINT}});
 }
 
 template <typename T>
-void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, Vector &result) {
-
-  T test = input_vector[2];
+void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, Vector &result, uint8_t vector_type) {
 
   // local, global and encryption state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
@@ -72,26 +71,34 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   auto &nonce_lo = children[1];
   auto &counter_vec = children[2];
   auto &cipher_vec = children[3];
+  auto &type_vec = children[5];
 
   nonce_hi->SetVectorType(VectorType::CONSTANT_VECTOR);
   nonce_lo->SetVectorType(VectorType::CONSTANT_VECTOR);
   counter_vec->SetVectorType(VectorType::FLAT_VECTOR);
   cipher_vec->SetVectorType(VectorType::FLAT_VECTOR);
+  type_vec->SetVectorType(VectorType::CONSTANT_VECTOR);
 
   UnifiedVectorFormat nonce_hi_u;
   UnifiedVectorFormat nonce_lo_u;
   UnifiedVectorFormat counter_vec_u;
   UnifiedVectorFormat cipher_vec_u;
+  UnifiedVectorFormat type_vec_u;
 
   nonce_hi->ToUnifiedFormat(size, nonce_hi_u);
   nonce_lo->ToUnifiedFormat(size, nonce_lo_u);
   counter_vec->ToUnifiedFormat(size, counter_vec_u);
   cipher_vec->ToUnifiedFormat(size, cipher_vec_u);
+  type_vec->ToUnifiedFormat(size, type_vec_u);
 
   auto nonce_hi_data = FlatVector::GetData<uint64_t>(*nonce_hi);
   auto nonce_lo_data = FlatVector::GetData<uint32_t>(*nonce_lo);
   auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
   auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
+  auto type_vec_data = FlatVector::GetData<int8_t>(*type_vec);
+
+  // set type
+  type_vec_data[0] = vector_type;
 
   // set nonce
   nonce_hi_data[0] = (static_cast<uint64_t>(lstate.iv[0]) << 32) | lstate.iv[1];
@@ -195,56 +202,46 @@ static void EncryptDataVectorized(DataChunk &args, ExpressionState &state,
 
   auto &input_vector = args.data[0];
   auto vector_type = input_vector.GetType();
+
+  auto vector_type_id = PhysicalType(input_vector.GetType().id());
   auto size = args.size();
 
   UnifiedVectorFormat vdata_input;
   input_vector.ToUnifiedFormat(args.size(), vdata_input);
 
-  // TODO; fix and check validity
-  ValidityMask &result_validity = FlatVector::Validity(result);
-  auto vd = vdata_input.data;
-
-  if (vector_type.IsNumeric()) {
-    switch (vector_type.id()) {
+  switch (vector_type.id()) {
     case LogicalTypeId::TINYINT:
     case LogicalTypeId::UTINYINT:
       return EncryptVectorized<int8_t>((int8_t *)vdata_input.data,
-                                    size, state, result);
+                                    size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::SMALLINT:
     case LogicalTypeId::USMALLINT:
       return EncryptVectorized<int16_t>((int16_t *)vdata_input.data,
-                                     size, state, result);
+                                     size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::INTEGER:
       return EncryptVectorized<int32_t>((int32_t *)vdata_input.data,
-                                     size, state, result);
+                                     size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::UINTEGER:
       return EncryptVectorized<uint32_t>((uint32_t *)vdata_input.data,
-                                      size, state, result);
+                                      size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::BIGINT:
       return EncryptVectorized<int64_t>((int64_t *)vdata_input.data,
-                                     size, state, result);
+                                     size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::UBIGINT:
       return EncryptVectorized<uint64_t>((uint64_t *)vdata_input.data,
-                                      size, state, result);
+                                      size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::FLOAT:
       return EncryptVectorized<float>((float *)vdata_input.data,
-                                   size, state, result);
+                                   size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::DOUBLE:
       return EncryptVectorized<double>((double *)vdata_input.data,
-                                    size, state, result);
+                                    size, state, result, uint8_t(vector_type_id));
+    case LogicalTypeId::VARCHAR:
+    return EncryptVectorized<string_t>((string_t *)vdata_input.data,
+                                    size, state, result, uint8_t(vector_type_id));
     default:
       throw NotImplementedException("Unsupported numeric type for encryption");
-    }
-  } else if (vector_type.id() == LogicalTypeId::VARCHAR) {
-    return EncryptVectorized<string_t>((string_t *)vdata_input.data,
-                                    size, state, result);
-  } else if (vector_type.IsNested()) {
-    throw NotImplementedException(
-        "Nested types are not supported for encryption");
-  } else if (vector_type.IsTemporal()) {
-    throw NotImplementedException(
-        "Temporal types are not supported for encryption");
-  }
+}
 }
 
 
@@ -259,7 +256,8 @@ ScalarFunctionSet GetEncryptionVectorizedFunction() {
                                             {"nonce_lo", LogicalType::UBIGINT},
                                             {"counter", LogicalType::UINTEGER},
                                             {"cipher", LogicalType::SMALLINT},
-                                            {"value", LogicalType::BLOB}}),
+                                            {"value", LogicalType::BLOB},
+                                            {"type", LogicalType::TINYINT}}),
                        EncryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
   }
 

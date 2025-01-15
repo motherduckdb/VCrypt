@@ -12,8 +12,8 @@ public:
   ArenaAllocator arena;
   uint32_t iv[4];
 
-  uint32_t counter = -1;
-  uint32_t internal_counter = 0;
+  uint32_t counter = -2;
+  uint32_t index = 0;
   uint32_t to_process_total;
   uint32_t to_process_batch;
   uint32_t batch_size = BATCH_SIZE;
@@ -31,8 +31,8 @@ public:
 
   ~VCryptFunctionLocalState() {
     // Reset state
-    counter = -1;
-    internal_counter = 0;
+    counter = -2;
+    index = 0;
   }
 };
 
