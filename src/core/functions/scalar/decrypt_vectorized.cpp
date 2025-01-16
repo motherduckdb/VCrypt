@@ -59,33 +59,140 @@ LogicalType CreateDecryptionStruct() {
                               {"value", LogicalType::BLOB}});
 }
 
-template <typename T>
-void DecryptInBatch(Vector &input_vector, uint64_t size,
-                      ExpressionState &state, Vector &result) {
+bool CheckNonce(Vector &nonce_hi, Vector &nonce_lo, uint64_t size) {
 
-for (uint32_t i = 0; i < BATCH_SIZE; i++){
-  // decrypt in 1 go
+  // case: if data fetched from storage, and constant vectors
+  if ((nonce_hi.GetVectorType() == VectorType::CONSTANT_VECTOR) &&
+      (nonce_lo.GetVectorType() == VectorType::CONSTANT_VECTOR)) {
+    return true;
+  }
+
+  auto nonce_hi_data = FlatVector::GetData<uint64_t>(nonce_hi);
+  auto nonce_lo_data = FlatVector::GetData<uint64_t>(nonce_lo);
+
+  auto nonce_hi_val = nonce_hi_data[0];
+  auto nonce_lo_val = nonce_lo_data[0];
+  auto nonce_hi_tmp = nonce_hi_data[0];
+  auto nonce_lo_tmp = nonce_lo_data[0];
+
+  idx_t index = 0;
+  while (index < size) {
+    nonce_hi_tmp = nonce_hi_data[index];
+    nonce_lo_tmp = nonce_lo_data[index];
+    if (nonce_hi_val == nonce_hi_data[index] && nonce_lo_val == nonce_lo_data[index]) {
+      index++;
+      continue;
+    }
+    break;
+  }
+
+  if (index < size) {
+    return false;
+  }
+
+  return true;
 }
+
+
+template <typename T>
+void DecryptPerValue(uint64_t nonce_hi_data, uint32_t *nonce_lo_data, uint32_t *counter_vec_data,
+                     uint16_t *cipher_vec_data, string_t *value_vec_data, uint64_t size, Vector &result,
+                     VCryptFunctionLocalState &lstate, EncryptionState &encryption_state, const string &key) {
+
+  ValidityMask &result_validity = FlatVector::Validity(result);
+  result.SetVectorType(VectorType::FLAT_VECTOR);
+  auto result_data = FlatVector::GetData<T>(result);
+
+  uint32_t i = 0;
+
+  // todo; fix
+  while (nonce_lo_data[i] == lstate.iv[2]) {
+    i++;
+  }
+
+  lstate.to_process_batch = i;
+
+  for (uint32_t j = 0; j < size; j++) {
+    if (lstate.counter != counter_vec_data[j]) {
+      if (lstate.counter + 1 != counter_vec_data[j]) {
+        // case: if counter is not sequential
+        // copy delta to last 4 bytes of iv
+        lstate.iv[3] = counter_vec_data[j] * (BATCH_SIZE * sizeof(T) / 16);
+        // (re)initialize encryption state
+        encryption_state.InitializeDecryption(
+            reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
+            reinterpret_cast<const string *>(&key));
+      }
+
+      lstate.counter = counter_vec_data[j];
+
+      // todo; cache the decrypted plaintext
+      encryption_state.Process(
+          reinterpret_cast<const_data_ptr_t>(value_vec_data[j].GetData()),
+          lstate.batch_size_in_bytes,
+          reinterpret_cast<unsigned char *>(lstate.buffer_p),
+          lstate.batch_size_in_bytes);
+
+      // copy first 64 bits of plaintext to uncipher the cipher
+      uint64_t plaintext_bytes;
+
+      // if cipher != seq then it's not in order and values need to be scattered
+      memcpy(&plaintext_bytes, lstate.buffer_p, sizeof(uint64_t));
+      // do already multiplication here
+
+      // count all similar counter values (optimize?)
+      auto seq_size = 0;
+      while (lstate.counter == counter_vec_data[j]) {
+        seq_size++;
+        j++;
+      }
+
+      uint32_t offset = 0;
+      if (seq_size == lstate.batch_size) {
+        // all values are in the same batch
+        // copy the decrypted data to the result vector
+        for (uint32_t i = 0; i < seq_size; i++) {
+          // is this internally stored as 32 bits?
+          result_data[lstate.index] = Load<T>(lstate.buffer_p + offset);
+          // memcpy(result_data + offset_result, lstate.buffer_p + offset_buffer + result_type_size, result_type_size);
+
+#ifdef DEBUG
+          T temp = Load<T>(lstate.buffer_p + offset);
+          auto check = result_data[lstate.index];
+          D_ASSERT(temp == check);
+#endif
+          offset += sizeof(T);
+          lstate.index++;
+        }
+      } else {
+        // case: values are in same batch but not in original order... (how to check?) case: part of values are in the same batch or values are in different batches
+        uint16_t position = UnMaskCipher(cipher_vec_data[j], &plaintext_bytes);
+        result_data[lstate.index] =
+            Load<T>(lstate.buffer_p + position * sizeof(T));
+        lstate.index++;
+      }
+      return;
+    }
+  }
 }
 
 template <typename T>
 void DecryptFromEtype(Vector &input_vector, uint64_t size,
                       ExpressionState &state, Vector &result) {
 
-  // todo; keep track with is_decrypted (bit)map
+  // todo; cache decrypted texts
 
-  // TODO: SET VALIDITY!
+  // TODO: check validity when storing decrypted values
   ValidityMask &result_validity = FlatVector::Validity(result);
   result.SetVectorType(VectorType::FLAT_VECTOR);
   auto result_data = FlatVector::GetData<T>(result);
 
-  // local, global and encryption state
+  // local, vcrypt (global) and encryption state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
   auto vcrypt_state = VCryptBasicFun::GetVCryptState(state);
   auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
   auto key = VCryptBasicFun::GetKey(state);
 
-  // do we need to check the validity?
   D_ASSERT(input_vector.GetType().id() == LogicalTypeId::STRUCT);
 
   auto &children = StructVector::GetEntries(input_vector);
@@ -108,10 +215,6 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
 
   D_ASSERT(value_vec->GetType() == LogicalTypeId::BLOB);
 
-  // vec type is not dictionary if never written to storage
-  // D_ASSERT(value_vec->GetVectorType() == VectorType::DICTIONARY_VECTOR);
-
-  // maybe we should avoid materializing...
   UnifiedVectorFormat value_vec_u;
   value_vec->ToUnifiedFormat(size, value_vec_u);
   auto value_vec_data = FlatVector::GetData<string_t>(*value_vec);
@@ -119,121 +222,115 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   auto nonce_hi_data = FlatVector::GetData<uint64_t>(*nonce_hi);
   auto nonce_lo_data = FlatVector::GetData<uint32_t>(*nonce_lo);
 
-  lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[0] >> 32);;
-  lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[0] & 0xFFFFFFFF);
-  lstate.iv[2] = nonce_lo_data[0];
-  lstate.iv[3] = 0;
-
-  lstate.to_process_batch = size;
-
-  // fix later
-//  if ((nonce_hi->GetVectorType() != VectorType::CONSTANT_VECTOR) || (nonce_lo->GetVectorType() != VectorType::CONSTANT_VECTOR)) {
-//    uint32_t i = 0;
-//
-//    // loop through whole vector
-//    while (nonce_lo_data[i] == lstate.iv[2]) {
-//      i++;
-//    }
-//
-//    lstate.to_process_batch = i;
-//
-//  } else {
-//    lstate.to_process_batch = size;
-//  }
-
-  auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
-  auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
-
   lstate.to_process_total = size;
 
-  // todo; this needs to be a loop not an assert
-  D_ASSERT(lstate.to_process_batch == lstate.to_process_total);
-
-  if (lstate.to_process_batch < BATCH_SIZE) {
-    lstate.batch_size = lstate.to_process_batch;
+  if (!CheckNonce(*nonce_hi, *nonce_lo, size)) {
+    // nonce is not sequential, go to per value implementation
+    throw NotImplementedException("Non-sequential nonce not yet supported");
   }
 
-  // the encryption granularity is always 128 * sizeof(T)
-  // or is it always 512 bytes??
-  // we need to align this in the encryption
+  auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
+
+  // assign the right parts of the nonce and counter to iv
+  lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[0] >> 32);
+  ;
+  lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[0] & 0xFFFFFFFF);
+  lstate.iv[2] = nonce_lo_data[0];
+  lstate.iv[3] = counter_vec_data[0];
+
+  idx_t current_batch = 0;
+  uint32_t total_batches = floor(size / lstate.batch_size);
+  idx_t current_index = 0;
+
+  while (current_batch < total_batches) {
+    for (idx_t j = 0; j < lstate.batch_size; j++) {
+      // check if the counter is sequential
+      if (counter_vec_data[current_index] ==
+          counter_vec_data[current_index + j]) {
+        continue;
+      }
+      // if not sequential go to other implementation
+      // to do: go to per-value implementation
+      throw NotImplementedException("Non-sequential nonce not yet supported");
+      break;
+    }
+    current_index += lstate.batch_size;
+    current_batch++;
+  }
+
+  // case; if values in vector < standard batch size
+  if (lstate.to_process_total < BATCH_SIZE) {
+    lstate.batch_size = lstate.to_process_total;
+  }
+
+  // vectorized implementation for sequential counter
   lstate.batch_size_in_bytes = sizeof(T) * BATCH_SIZE;
-  uint64_t plaintext_bytes;
+  auto total_size = sizeof(T) * size;
 
-  // iterate through the whole vector
-  // todo; optimize with vectorizing?
-//  for(uint32_t j = 0; j < size; j++) {
-//    result_data[j] = 1;
-//  }
+  // initialize encryption
+  encryption_state->InitializeDecryption(
+      reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
+      reinterpret_cast<const string *>(key));
 
-  for(uint32_t j = 0; j < size; j++){
-    if (lstate.counter != counter_vec_data[j]) {
-      if (lstate.counter + 1 != counter_vec_data[j]){
-        // case: if counter is not sequential
-        // copy delta to last 4 bytes of iv
-        lstate.iv[3] = counter_vec_data[j] * (BATCH_SIZE * sizeof(T) / 16);
-        // (re)initialize encryption state
-        encryption_state->InitializeDecryption(
-            reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
-            reinterpret_cast<const string *>(key));
-      }
-
-      lstate.counter = counter_vec_data[j];
-
-      // todo; cache the decrypted plaintext
-      encryption_state->Process(
-          reinterpret_cast<const_data_ptr_t>(value_vec_data[j].GetData()), lstate.batch_size_in_bytes,
-          reinterpret_cast<unsigned char *>(lstate.buffer_p),
-          lstate.batch_size_in_bytes);
-
-      // copy first 64 bits for the cipher
-      // also check cipher
-      // if cipher != seq then it's not in order and values need to be scattered
-      memcpy(&plaintext_bytes, lstate.buffer_p, sizeof(uint64_t));
-      // do already multiplication here
-
-      // count all similar counter values (optimize?)
-      auto seq_size = 0;
-      while(lstate.counter == counter_vec_data[j]){
-        seq_size++;
-        j++;
-      }
-
-      // todo; optimize vectorize
-      // check validity!! todo
-      // also check cipher
-      // if cipher != seq then its not in order and values need to be scattered
-
-      uint32_t offset = 0;
-      if (seq_size == lstate.batch_size){
-        // all values are in the same batch
-        // copy the decrypted data to the result vector
-        for (uint32_t i = 0; i < seq_size; i++) {
-          // is this internally stored as 32 bits?
-          result_data[lstate.index] = Load<T>(lstate.buffer_p + offset);
-          // memcpy(result_data + offset, lstate.buffer_p + offset, sizeof(T));
+  // decrypt the whole vector at once
+  // does not work because strings are not aligned
+#if 0
+  encryption_state->Process(
+        reinterpret_cast<const_data_ptr_t>(value_vec_data[0].GetData()),
+        total_size,
+        reinterpret_cast<unsigned char *>(lstate.buffer_p),
+        total_size);
+#endif
 
 #ifdef DEBUG
-          T temp = Load<T>(lstate.buffer_p + offset);
-          auto check = result_data[lstate.index];
-          D_ASSERT(temp == check);
+  // check data pointer
+  const char *data_ptr;
+  uint32_t k = 0;
+  while (k < size) {
+    data_ptr = value_vec_data[k].GetData();
+    k += 128;
+  }
 #endif
-          // why * 2???
-          auto sizet = sizeof(T);
-          offset += sizeof(T);
-          lstate.index++;
-        }
-      } else {
-        // case: values are in same batch but not in original order... (how to check?)
-        // case: part of values are in the same batch
-        // or values are in different batches
-        // problem; this is stored in a uint output
-        uint16_t position = UnMaskCipher(cipher_vec_data[j], &plaintext_bytes);
-        result_data[lstate.index] = Load<T>(lstate.buffer_p + position * sizeof(T));
-        lstate.index++;
-      }
-      return;
+
+  // decrypt vectors per batch and store per batch
+  for (idx_t index = 0; index < total_batches; index++) {
+    auto data_size = value_vec_data[index].GetSize();
+
+    // decrypt each batch
+    encryption_state->Process(
+        reinterpret_cast<const_data_ptr_t>(
+            value_vec_data[index].GetDataWriteable()),
+        data_size, reinterpret_cast<unsigned char *>(lstate.buffer_p),
+        data_size);
+
+    // todo; check validity of records before storing
+    uint32_t offset = 0;
+    for (uint32_t i = 0; i < lstate.batch_size; i++) {
+      // read and store all values in vector
+      result_data[lstate.index] = Load<T>(lstate.buffer_p + offset);
+
+#ifdef DEBUG
+      T temp = Load<T>(lstate.buffer_p + offset);
+      auto check = result_data[lstate.index];
+      D_ASSERT(temp == check);
+#endif
+
+#if 0
+    if (i % 128 == 0){
+      //break
+      auto x = 1;
+    }
+#endif
+
+      offset += sizeof(T);
+      lstate.index++;
     }
 
+    lstate.to_process_total -= lstate.batch_size;
+
+    if (lstate.to_process_total < BATCH_SIZE) {
+      lstate.batch_size = lstate.to_process_total;
+    }
 
   }
 }
@@ -244,7 +341,6 @@ static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
 
   auto size = args.size();
   auto &input_vector = args.data[0];
-  auto temp_type = result.GetType();
 
   // derive TypeID from the input vector
   auto &children = StructVector::GetEntries(input_vector);
@@ -290,6 +386,7 @@ static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
 ScalarFunctionSet GetDecryptionVectorizedFunction() {
   ScalarFunctionSet set("decrypt_vectorized");
 
+  // todo fix the right return type
   set.AddFunction(ScalarFunction(
       {LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                             {"nonce_lo", LogicalType::UBIGINT},
@@ -297,19 +394,8 @@ ScalarFunctionSet GetDecryptionVectorizedFunction() {
                             {"cipher", LogicalType::UINTEGER},
                             {"value", LogicalType::BLOB},
                             {"type", LogicalType::TINYINT}}),
-       LogicalType::VARCHAR}, LogicalType::UINTEGER,
+       LogicalType::VARCHAR}, LogicalType::BIGINT,
       DecryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
-
-//  for (auto &type : LogicalType::AllTypes()) {
-//        set.AddFunction(ScalarFunction(
-//            {LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-//                                  {"nonce_lo", LogicalType::UBIGINT},
-//                                  {"counter", LogicalType::UINTEGER},
-//                                  {"cipher", LogicalType::SMALLINT},
-//                                  {"value", LogicalType::BLOB}}),
-//             LogicalType::VARCHAR}, type,
-//        DecryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
-//  }
 
   return set;
 }

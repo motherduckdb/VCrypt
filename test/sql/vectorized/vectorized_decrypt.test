@@ -24,7 +24,7 @@ statement ok
 ALTER TABLE test_1 ADD COLUMN encrypted_values STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, counter UINTEGER, cipher UINTEGER, value BLOB, type TINYINT);
 
 statement ok
-ALTER TABLE test_1 ADD COLUMN decrypted_values INT64;
+ALTER TABLE test_1 ADD COLUMN decrypted_values BIGINT;
 
 statement ok
 UPDATE test_1 SET encrypted_values = encrypt_vectorized(value, 'key_1');
