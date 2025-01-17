@@ -69,16 +69,11 @@ bool CheckNonce(Vector &nonce_hi, Vector &nonce_lo, uint64_t size) {
 
   auto nonce_hi_data = FlatVector::GetData<uint64_t>(nonce_hi);
   auto nonce_lo_data = FlatVector::GetData<uint64_t>(nonce_lo);
-
   auto nonce_hi_val = nonce_hi_data[0];
   auto nonce_lo_val = nonce_lo_data[0];
-  auto nonce_hi_tmp = nonce_hi_data[0];
-  auto nonce_lo_tmp = nonce_lo_data[0];
 
   idx_t index = 0;
   while (index < size) {
-    nonce_hi_tmp = nonce_hi_data[index];
-    nonce_lo_tmp = nonce_lo_data[index];
     if (nonce_hi_val == nonce_hi_data[index] && nonce_lo_val == nonce_lo_data[index]) {
       index++;
       continue;
@@ -233,7 +228,6 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
 
   // assign the right parts of the nonce and counter to iv
   lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[0] >> 32);
-  ;
   lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[0] & 0xFFFFFFFF);
   lstate.iv[2] = nonce_lo_data[0];
   lstate.iv[3] = counter_vec_data[0];

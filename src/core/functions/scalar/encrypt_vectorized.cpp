@@ -51,141 +51,130 @@ LogicalType CreateEncryptionStruct() {
                               {"type", LogicalType::TINYINT}});
 }
 
-//template <typename T>
-//void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &state, Vector &result, uint8_t vector_type) {
-//
-//  // local, global and encryption state
-//  auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
-//  auto vcrypt_state =
-//      VCryptBasicFun::GetVCryptState(state);
-//
-//  auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
-//  // todo; fix key
-//  auto key = VCryptBasicFun::GetKey(state);
-//
-//  Vector struct_vector(CreateEncryptionStruct(), size);
-//  result.ReferenceAndSetType(struct_vector);
-//
-//  auto &children = StructVector::GetEntries(result);
-//  auto &nonce_hi = children[0];
-//  auto &nonce_lo = children[1];
-//  auto &counter_vec = children[2];
-//  auto &cipher_vec = children[3];
-//  auto &blob_vec = children[4];
-//  auto &type_vec = children[5];
-//
-//  nonce_hi->SetVectorType(VectorType::CONSTANT_VECTOR);
-//  nonce_lo->SetVectorType(VectorType::CONSTANT_VECTOR);
-//  counter_vec->SetVectorType(VectorType::FLAT_VECTOR);
-//  cipher_vec->SetVectorType(VectorType::FLAT_VECTOR);
-//  blob_vec->SetVectorType(VectorType::FLAT_VECTOR);
-//  type_vec->SetVectorType(VectorType::CONSTANT_VECTOR);
-//
-//  UnifiedVectorFormat nonce_hi_u;
-//  UnifiedVectorFormat nonce_lo_u;
-//  UnifiedVectorFormat counter_vec_u;
-//  UnifiedVectorFormat cipher_vec_u;
-//  UnifiedVectorFormat blob_vec_u;
-//  UnifiedVectorFormat type_vec_u;
-//
-//  nonce_hi->ToUnifiedFormat(size, nonce_hi_u);
-//  nonce_lo->ToUnifiedFormat(size, nonce_lo_u);
-//  counter_vec->ToUnifiedFormat(size, counter_vec_u);
-//  cipher_vec->ToUnifiedFormat(size, cipher_vec_u);
-//  blob_vec->ToUnifiedFormat(size, blob_vec_u);
-//  type_vec->ToUnifiedFormat(size, type_vec_u);
-//
-//  auto nonce_hi_data = FlatVector::GetData<uint64_t>(*nonce_hi);
-//  auto nonce_lo_data = FlatVector::GetData<uint32_t>(*nonce_lo);
-//  auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
-//  auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
-//  auto type_vec_data = FlatVector::GetData<int8_t>(*type_vec);
-//  auto blob_vec_data = FlatVector::GetData<string_t>(*blob_vec);
-//
-//  // set type
-//  type_vec_data[0] = vector_type;
-//
-//  // set nonce
-//  nonce_hi_data[0] = (static_cast<uint64_t>(lstate.iv[0]) << 32) | lstate.iv[1];
-//  nonce_lo_data[0] = lstate.iv[2];
-//
-//  encryption_state->InitializeEncryption(
-//      reinterpret_cast<const_data_ptr_t>(lstate.iv), 16, key);
-//
-//  // todo; create separate function for strings
-//  lstate.to_process_batch = size;
-//  auto total_size = sizeof(T) * size;
-//
-//  if (lstate.to_process_batch > BATCH_SIZE) {
-//    lstate.batch_size = BATCH_SIZE;
-//  } else {
-//    lstate.batch_size = lstate.to_process_batch;
-//  }
-//
-//  lstate.batch_size_in_bytes = lstate.batch_size * sizeof(T);
-//  uint64_t plaintext_bytes;
-//
-//  encryption_state->Process(
-//      reinterpret_cast<const unsigned char *>(input_vector), total_size,
-//      lstate.buffer_p, total_size);
-//
-//  auto index = 0;
-//  auto batch_nr = 0;
-//  uint64_t buffer_offset;
-//
-//  // TODO: for strings this works different because the string size is variable
-//  while (lstate.to_process_batch) {
-//    buffer_offset = batch_nr * lstate.batch_size_in_bytes;
-//
-//    // copy the first 64 bits of plaintext of each batch or encrypt always 512
-//    // TODO: fix for edge case; resulting bytes are less then 64 bits (=8 bytes)
-//    auto processed = batch_nr * BATCH_SIZE;
-//    memcpy(&plaintext_bytes, &input_vector[processed], sizeof(uint64_t));
-//
-//    for (uint32_t j = 0; j < lstate.batch_size; j++) {
-//
-//      string_t encrypted_data = StringVector::EmptyString(*blob_vec, lstate.batch_size_in_bytes);
-//      encrypted_data.Finalize();
-//
-//      blob_vec_data[batch_nr] =
-//          StringVector::EmptyString(blob_vec_data[j], lstate.batch_size_in_bytes);
-//      *(uint32_t *)blob_vec_data[batch_nr].GetPrefixWriteable() =
-//          *(uint32_t *)lstate.buffer_p + buffer_offset;
-//
-//      memcpy(blob_vec_data[batch_nr].GetDataWriteable(), lstate.buffer_p + buffer_offset,
-//             lstate.batch_size_in_bytes);
-//
-//      blob_child_data[batch_nr].Finalize();
-//
-//      // set index of selection vector
-//      blob_sel.set_index(index, batch_nr);
-//      // cipher contains the (masked) position in the block
-//      // to calculate the offset: plain_cipher * sizeof(T)
-//      // todo; fix the is_null
-//      cipher_vec_data[index] = MaskCipher(j, &plaintext_bytes, false);
-//      // counter is used to identify the delta of the nonce
-//      counter_vec_data[index] = batch_nr;
-//
-//      index++;
-//    }
-//
-//    batch_nr++;
-//
-//    // todo: optimize
-//    if (lstate.to_process_batch > BATCH_SIZE) {
-//      lstate.to_process_batch -= BATCH_SIZE;
-//    } else {
-//      // processing finalized
-//      lstate.to_process_batch = 0;
-//      break;
-//    }
-//
-//    if (lstate.to_process_batch < BATCH_SIZE) {
-//      lstate.batch_size = lstate.to_process_batch;
-//      lstate.batch_size_in_bytes = lstate.to_process_batch * sizeof(T);
-//    }
-//  }
-//}
+template <typename T>
+void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &state, Vector &result, uint8_t vector_type) {
+
+  // local, global and encryption state
+  auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
+  auto vcrypt_state =
+      VCryptBasicFun::GetVCryptState(state);
+
+  auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
+  // todo; fix key
+  auto key = VCryptBasicFun::GetKey(state);
+
+  Vector struct_vector(CreateEncryptionStruct(), size);
+  result.ReferenceAndSetType(struct_vector);
+
+  auto &children = StructVector::GetEntries(result);
+  auto &nonce_hi = children[0];
+  auto &nonce_lo = children[1];
+  auto &counter_vec = children[2];
+  auto &cipher_vec = children[3];
+  auto &blob_vec = children[4];
+  auto &type_vec = children[5];
+
+  nonce_hi->SetVectorType(VectorType::CONSTANT_VECTOR);
+  nonce_lo->SetVectorType(VectorType::CONSTANT_VECTOR);
+  counter_vec->SetVectorType(VectorType::FLAT_VECTOR);
+  cipher_vec->SetVectorType(VectorType::FLAT_VECTOR);
+  blob_vec->SetVectorType(VectorType::FLAT_VECTOR);
+  type_vec->SetVectorType(VectorType::CONSTANT_VECTOR);
+
+  UnifiedVectorFormat nonce_hi_u;
+  UnifiedVectorFormat nonce_lo_u;
+  UnifiedVectorFormat counter_vec_u;
+  UnifiedVectorFormat cipher_vec_u;
+  UnifiedVectorFormat blob_vec_u;
+  UnifiedVectorFormat type_vec_u;
+
+  nonce_hi->ToUnifiedFormat(size, nonce_hi_u);
+  nonce_lo->ToUnifiedFormat(size, nonce_lo_u);
+  counter_vec->ToUnifiedFormat(size, counter_vec_u);
+  cipher_vec->ToUnifiedFormat(size, cipher_vec_u);
+  blob_vec->ToUnifiedFormat(size, blob_vec_u);
+  type_vec->ToUnifiedFormat(size, type_vec_u);
+
+  auto nonce_hi_data = FlatVector::GetData<uint64_t>(*nonce_hi);
+  auto nonce_lo_data = FlatVector::GetData<uint32_t>(*nonce_lo);
+  auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
+  auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
+  auto type_vec_data = FlatVector::GetData<int8_t>(*type_vec);
+  auto blob_vec_data = FlatVector::GetData<string_t>(*blob_vec);
+
+  // set type
+  type_vec_data[0] = vector_type;
+
+  // set nonce
+  nonce_hi_data[0] = (static_cast<uint64_t>(lstate.iv[0]) << 32) | lstate.iv[1];
+  nonce_lo_data[0] = lstate.iv[2];
+
+  encryption_state->InitializeEncryption(
+      reinterpret_cast<const_data_ptr_t>(lstate.iv), 16, key);
+
+  // todo; create separate function for strings
+  lstate.to_process_batch = size;
+  auto total_size = sizeof(T) * size;
+
+  if (lstate.to_process_batch > BATCH_SIZE) {
+    lstate.batch_size = BATCH_SIZE;
+  } else {
+    lstate.batch_size = lstate.to_process_batch;
+  }
+
+  lstate.batch_size_in_bytes = lstate.batch_size * sizeof(T);
+  uint64_t plaintext_bytes;
+
+  encryption_state->Process(
+      reinterpret_cast<const unsigned char *>(input_vector), total_size,
+      lstate.buffer_p, total_size);
+
+  auto batch_nr = 0;
+  uint64_t buffer_offset;
+
+  // TODO: for strings this works different because the string size is variable
+  while (lstate.to_process_batch) {
+    buffer_offset = batch_nr * lstate.batch_size_in_bytes;
+
+    // copy the first 64 bits of plaintext of each batch or encrypt always 512
+    // TODO: fix for edge case; resulting bytes are less then 64 bits (=8 bytes)
+    auto processed = batch_nr * BATCH_SIZE;
+    memcpy(&plaintext_bytes, &input_vector[processed], sizeof(uint64_t));
+
+    for (uint32_t j = 0; j < lstate.batch_size; j++) {
+
+      string_t encrypted_data = StringVector::EmptyString(*blob_vec, lstate.batch_size_in_bytes);
+      memcpy(encrypted_data.GetDataWriteable(), lstate.buffer_p + buffer_offset,
+             lstate.batch_size_in_bytes);
+      encrypted_data.Finalize();
+
+      // iterate through batch
+      for (uint32_t i = 0; i < lstate.batch_size; i++) {
+        blob_vec_data[lstate.index]  = encrypted_data;
+        cipher_vec_data[lstate.index] = MaskCipher(j, &plaintext_bytes, false);
+        counter_vec_data[lstate.index] = batch_nr;
+        lstate.index++;
+      }
+
+      batch_nr++;
+
+      // todo: optimize
+      if (lstate.to_process_batch > BATCH_SIZE) {
+        lstate.to_process_batch -= BATCH_SIZE;
+      } else {
+        // processing finalized
+        lstate.to_process_batch = 0;
+        break;
+      }
+
+      if (lstate.to_process_batch < BATCH_SIZE) {
+        lstate.batch_size = lstate.to_process_batch;
+        lstate.batch_size_in_bytes = lstate.to_process_batch * sizeof(T);
+      }
+
+    }
+  }
+}
 
 template <typename T>
 void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, Vector &result, uint8_t vector_type) {
@@ -287,8 +276,6 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
 
     blob_child_data[batch_nr] =
         StringVector::EmptyString(blob_child, lstate.batch_size_in_bytes);
-    *(uint32_t *)blob_child_data[batch_nr].GetPrefixWriteable() =
-        *(uint32_t *)lstate.buffer_p + buffer_offset;
 
     memcpy(blob_child_data[batch_nr].GetDataWriteable(), lstate.buffer_p + buffer_offset,
            lstate.batch_size_in_bytes);
