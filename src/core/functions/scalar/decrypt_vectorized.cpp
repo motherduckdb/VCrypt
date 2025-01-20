@@ -29,25 +29,25 @@ namespace simple_encryption {
 
 namespace core {
 
-uint16_t UnMaskCipher(uint16_t cipher, uint64_t *plaintext_bytes){
-//  const uint64_t prime = 10251357202697351;
-//  auto const a_plaintext = plaintext_bytes + 1;
-//  auto random_val = *plaintext_bytes * prime;
+uint16_t UnMaskCipher(uint16_t cipher, uint64_t *plaintext_bytes) {
+  //  const uint64_t prime = 10251357202697351;
+  //  auto const a_plaintext = plaintext_bytes + 1;
+  //  auto random_val = *plaintext_bytes * prime;
 
   // mask the first 8 bits by shifting and cast to uint16_t
-//  uint16_t mask = static_cast<uint16_t>((random_val) >> 56);
-//  uint16_t unmasked_cipher = cipher ^ mask;
-//
-//  bool is_null = (unmasked_cipher & 1) != 0;
-//
-//  if (is_null) {
-//    return NULL;
-//  }
-//
-//  // remove lsb
-//  cipher = static_cast<uint16_t>(unmasked_cipher >> 1);
-//
-//  return cipher;
+  //  uint16_t mask = static_cast<uint16_t>((random_val) >> 56);
+  //  uint16_t unmasked_cipher = cipher ^ mask;
+  //
+  //  bool is_null = (unmasked_cipher & 1) != 0;
+  //
+  //  if (is_null) {
+  //    return NULL;
+  //  }
+  //
+  //  // remove lsb
+  //  cipher = static_cast<uint16_t>(unmasked_cipher >> 1);
+  //
+  //  return cipher;
   return cipher;
 }
 
@@ -74,7 +74,8 @@ bool CheckNonce(Vector &nonce_hi, Vector &nonce_lo, uint64_t size) {
 
   idx_t index = 0;
   while (index < size) {
-    if (nonce_hi_val == nonce_hi_data[index] && nonce_lo_val == nonce_lo_data[index]) {
+    if (nonce_hi_val == nonce_hi_data[index] &&
+        nonce_lo_val == nonce_lo_data[index]) {
       index++;
       continue;
     }
@@ -88,11 +89,12 @@ bool CheckNonce(Vector &nonce_hi, Vector &nonce_lo, uint64_t size) {
   return true;
 }
 
-
 template <typename T>
-void DecryptPerValue(uint64_t nonce_hi_data, uint32_t *nonce_lo_data, uint32_t *counter_vec_data,
-                     uint16_t *cipher_vec_data, string_t *value_vec_data, uint64_t size, Vector &result,
-                     VCryptFunctionLocalState &lstate, EncryptionState &encryption_state, const string &key) {
+void DecryptPerValue(uint64_t nonce_hi_data, uint32_t *nonce_lo_data,
+                     uint32_t *counter_vec_data, uint16_t *cipher_vec_data,
+                     string_t *value_vec_data, uint64_t size, Vector &result,
+                     VCryptFunctionLocalState &lstate,
+                     EncryptionState &encryption_state, const string &key) {
 
   ValidityMask &result_validity = FlatVector::Validity(result);
   result.SetVectorType(VectorType::FLAT_VECTOR);
@@ -257,78 +259,21 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
     lstate.batch_size = lstate.to_process_total;
   }
 
+  auto total_size = sizeof(T) * size;
+
   // vectorized implementation for sequential counter
   lstate.batch_size_in_bytes = sizeof(T) * BATCH_SIZE;
-  auto total_size = sizeof(T) * size;
 
   // initialize encryption
   encryption_state->InitializeDecryption(
       reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
       reinterpret_cast<const string *>(key));
 
-  // decrypt the whole vector at once
-  // does not work because strings are not aligned
-#if 0
   encryption_state->Process(
-        reinterpret_cast<const_data_ptr_t>(value_vec_data[0].GetData()),
-        total_size,
-        reinterpret_cast<unsigned char *>(lstate.buffer_p),
-        total_size);
-#endif
+      reinterpret_cast<const_data_ptr_t>(value_vec_data[0].GetData()),
+      total_size, reinterpret_cast<unsigned char *>(result_data), total_size);
 
-#ifdef DEBUG
-  // check data pointer
-  const char *data_ptr;
-  uint32_t k = 0;
-  while (k < size) {
-    data_ptr = value_vec_data[k].GetData();
-    k += 128;
-  }
-#endif
-
-  // decrypt vectors per batch and store per batch
-  for (idx_t index = 0; index < total_batches; index++) {
-    auto data_size = value_vec_data[index].GetSize();
-
-    // decrypt each batch
-    encryption_state->Process(
-        reinterpret_cast<const_data_ptr_t>(
-            value_vec_data[index].GetDataWriteable()),
-        data_size, reinterpret_cast<unsigned char *>(lstate.buffer_p),
-        data_size);
-
-    // todo; check validity of records before storing
-    uint32_t offset = 0;
-    for (uint32_t i = 0; i < lstate.batch_size; i++) {
-      // read and store all values in vector
-      result_data[lstate.index] = Load<T>(lstate.buffer_p + offset);
-
-#ifdef DEBUG
-      T temp = Load<T>(lstate.buffer_p + offset);
-      auto check = result_data[lstate.index];
-      D_ASSERT(temp == check);
-#endif
-
-#if 0
-    if (i % 128 == 0){
-      //break
-      auto x = 1;
-    }
-#endif
-
-      offset += sizeof(T);
-      lstate.index++;
-    }
-
-    lstate.to_process_total -= lstate.batch_size;
-
-    if (lstate.to_process_total < BATCH_SIZE) {
-      lstate.batch_size = lstate.to_process_total;
-    }
-
-  }
 }
-
 
 static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
                                   Vector &result) {

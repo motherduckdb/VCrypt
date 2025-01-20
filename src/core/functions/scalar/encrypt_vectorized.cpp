@@ -30,6 +30,7 @@ namespace core {
 uint16_t MaskCipher(uint16_t cipher, uint64_t *plaintext_bytes, bool is_null){
 //    const uint64_t prime = 10251357202697351;
 //    auto const a_plaintext = plaintext_bytes + 1;
+//    // (plaintext xor p1) * p2)
 //    uint64_t random_val = *a_plaintext * prime;
 //
 //    // mask the first 8 bits by shifting and cast to uint16_t
@@ -132,48 +133,52 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
   auto batch_nr = 0;
   uint64_t buffer_offset;
 
+  auto encrypted_data = StringVector::EmptyString(*blob_vec, total_size);
+  memcpy(encrypted_data.GetDataWriteable(), lstate.buffer_p,
+         total_size);
+  encrypted_data.Finalize();
+
   // TODO: for strings this works different because the string size is variable
   while (lstate.to_process_batch) {
-    buffer_offset = batch_nr * lstate.batch_size_in_bytes;
 
     // copy the first 64 bits of plaintext of each batch or encrypt always 512
     // TODO: fix for edge case; resulting bytes are less then 64 bits (=8 bytes)
     auto processed = batch_nr * BATCH_SIZE;
-    memcpy(&plaintext_bytes, &input_vector[processed], sizeof(uint64_t));
+    memcpy(&plaintext_bytes, &input_vector[processed], sizeof(T));
+    buffer_offset = batch_nr * lstate.batch_size_in_bytes;
 
-    for (uint32_t j = 0; j < lstate.batch_size; j++) {
+    encrypted_data.SetPointer(encrypted_data.GetDataWriteable() + buffer_offset);
 
-      string_t encrypted_data = StringVector::EmptyString(*blob_vec, lstate.batch_size_in_bytes);
-      memcpy(encrypted_data.GetDataWriteable(), lstate.buffer_p + buffer_offset,
-             lstate.batch_size_in_bytes);
-      encrypted_data.Finalize();
-
-      // iterate through batch
-      for (uint32_t i = 0; i < lstate.batch_size; i++) {
-        blob_vec_data[lstate.index]  = encrypted_data;
-        cipher_vec_data[lstate.index] = MaskCipher(j, &plaintext_bytes, false);
-        counter_vec_data[lstate.index] = batch_nr;
-        lstate.index++;
-      }
-
-      batch_nr++;
-
-      // todo: optimize
-      if (lstate.to_process_batch > BATCH_SIZE) {
-        lstate.to_process_batch -= BATCH_SIZE;
-      } else {
-        // processing finalized
-        lstate.to_process_batch = 0;
-        break;
-      }
-
-      if (lstate.to_process_batch < BATCH_SIZE) {
-        lstate.batch_size = lstate.to_process_batch;
-        lstate.batch_size_in_bytes = lstate.to_process_batch * sizeof(T);
-      }
-
+    // iterate through batch
+    for (uint32_t i = 0; i < lstate.batch_size; i++) {
+      blob_vec_data[lstate.index]  = encrypted_data;
+      cipher_vec_data[lstate.index] = MaskCipher(i, &plaintext_bytes, false);
+      counter_vec_data[lstate.index] = batch_nr;
+      lstate.index++;
     }
+
+#ifdef DEBUG
+    // todo implement has
+#endif
+
+    batch_nr++;
+
+    // todo: optimize
+    if (lstate.to_process_batch > BATCH_SIZE) {
+      lstate.to_process_batch -= BATCH_SIZE;
+    } else {
+      // processing finalized
+      lstate.to_process_batch = 0;
+      break;
+    }
+
+    if (lstate.to_process_batch < BATCH_SIZE) {
+      lstate.batch_size = lstate.to_process_batch;
+      lstate.batch_size_in_bytes = lstate.to_process_batch * sizeof(T);
+    }
+
   }
+
 }
 
 template <typename T>
@@ -342,10 +347,10 @@ static void EncryptDataVectorized(DataChunk &args, ExpressionState &state,
       return EncryptVectorized<uint32_t>((uint32_t *)vdata_input.data,
                                       size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::BIGINT:
-      return EncryptVectorized<int64_t>((int64_t *)vdata_input.data,
+      return EncryptVectorizedFlat<int64_t>((int64_t *)vdata_input.data,
                                      size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::UBIGINT:
-      return EncryptVectorized<uint64_t>((uint64_t *)vdata_input.data,
+      return EncryptVectorizedFlat<uint64_t>((uint64_t *)vdata_input.data,
                                       size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::FLOAT:
       return EncryptVectorized<float>((float *)vdata_input.data,
