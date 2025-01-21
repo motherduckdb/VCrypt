@@ -137,6 +137,7 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
   memcpy(encrypted_data.GetDataWriteable(), lstate.buffer_p,
          total_size);
   encrypted_data.Finalize();
+  auto initial_ptr =  encrypted_data.GetDataWriteable();
 
   // TODO: for strings this works different because the string size is variable
   while (lstate.to_process_batch) {
@@ -147,7 +148,8 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
     memcpy(&plaintext_bytes, &input_vector[processed], sizeof(T));
     buffer_offset = batch_nr * lstate.batch_size_in_bytes;
 
-    encrypted_data.SetPointer(encrypted_data.GetDataWriteable() + buffer_offset);
+    encrypted_data.SetPointer(initial_ptr + buffer_offset);
+    encrypted_data.Finalize();
 
     // iterate through batch
     for (uint32_t i = 0; i < lstate.batch_size; i++) {
@@ -158,7 +160,7 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
     }
 
 #ifdef DEBUG
-    // todo implement has
+    // todo implement hash to check the encrypted data
 #endif
 
     batch_nr++;
