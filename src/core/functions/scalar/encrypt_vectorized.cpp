@@ -27,6 +27,7 @@ namespace simple_encryption {
 
 namespace core {
 
+
 uint16_t MaskCipher(uint16_t cipher, uint64_t *plaintext_bytes, bool is_null){
 //    const uint64_t prime = 10251357202697351;
 //    auto const a_plaintext = plaintext_bytes + 1;
@@ -63,6 +64,7 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
   auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
   // todo; fix key
   auto key = VCryptBasicFun::GetKey(state);
+  auto &validity = FlatVector::Validity(result);
 
   Vector struct_vector(CreateEncryptionStruct(), size);
   result.ReferenceAndSetType(struct_vector);
@@ -126,38 +128,44 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
   lstate.batch_size_in_bytes = lstate.batch_size * sizeof(T);
   uint64_t plaintext_bytes;
 
-  encryption_state->Process(
-      reinterpret_cast<const unsigned char *>(input_vector), total_size,
-      lstate.buffer_p, total_size);
+  auto base_ptr = StringVector::EmptyString(*blob_vec, total_size).GetDataWriteable();
+//  encryption_state->Process(
+//      reinterpret_cast<const unsigned char *>(input_vector), total_size,
+//      reinterpret_cast<data_ptr_t>(base_ptr), total_size);
 
   auto batch_nr = 0;
-  uint64_t buffer_offset;
-
-  auto encrypted_data = StringVector::EmptyString(*blob_vec, total_size);
-  memcpy(encrypted_data.GetDataWriteable(), lstate.buffer_p,
-         total_size);
-  encrypted_data.Finalize();
-  auto initial_ptr =  encrypted_data.GetDataWriteable();
+  auto buffer_offset = 0;
 
   // TODO: for strings this works different because the string size is variable
   while (lstate.to_process_batch) {
 
-    // copy the first 64 bits of plaintext of each batch or encrypt always 512
     // TODO: fix for edge case; resulting bytes are less then 64 bits (=8 bytes)
     auto processed = batch_nr * BATCH_SIZE;
-    memcpy(&plaintext_bytes, &input_vector[processed], sizeof(T));
+    // memcpy(&plaintext_bytes, &input_vector[processed], sizeof(T));
     buffer_offset = batch_nr * lstate.batch_size_in_bytes;
 
-    encrypted_data.SetPointer(initial_ptr + buffer_offset);
-    encrypted_data.Finalize();
+    string_t encrypted_string = StringVector::EmptyString(*blob_vec, lstate.batch_size_in_bytes);
 
-    // iterate through batch
+    encryption_state->Process(
+        reinterpret_cast<const unsigned char *>(input_vector) + buffer_offset, lstate.batch_size_in_bytes,
+        reinterpret_cast<data_ptr_t>(encrypted_string.GetDataWriteable()), lstate.batch_size_in_bytes);
+
+    encrypted_string.Finalize();
+
+    // iterate through a single batch
     for (uint32_t i = 0; i < lstate.batch_size; i++) {
-      blob_vec_data[lstate.index]  = encrypted_data;
+
+      if (!validity.RowIsValid(lstate.index)) {
+        continue;
+      }
+
+      blob_vec_data[lstate.index] = encrypted_string;
       cipher_vec_data[lstate.index] = MaskCipher(i, &plaintext_bytes, false);
       counter_vec_data[lstate.index] = batch_nr;
       lstate.index++;
     }
+
+    base_ptr += lstate.batch_size_in_bytes;
 
 #ifdef DEBUG
     // todo implement hash to check the encrypted data
@@ -178,7 +186,6 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
       lstate.batch_size = lstate.to_process_batch;
       lstate.batch_size_in_bytes = lstate.to_process_batch * sizeof(T);
     }
-
   }
 
 }
@@ -194,6 +201,7 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
   // todo; fix key
   auto key = VCryptBasicFun::GetKey(state);
+  auto &validity = FlatVector::Validity(result);
 
   Vector struct_vector(CreateEncryptionStruct(), size);
   result.ReferenceAndSetType(struct_vector);
@@ -283,14 +291,17 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
 
     blob_child_data[batch_nr] =
         StringVector::EmptyString(blob_child, lstate.batch_size_in_bytes);
-
-    memcpy(blob_child_data[batch_nr].GetDataWriteable(), lstate.buffer_p + buffer_offset,
-           lstate.batch_size_in_bytes);
-
+    blob_child_data[batch_nr].SetPointer(
+        reinterpret_cast<char *>(lstate.buffer_p + buffer_offset));
     blob_child_data[batch_nr].Finalize();
 
     // set index in selection vector
     for (uint32_t j = 0; j < lstate.batch_size; j++) {
+
+      if (!validity.RowIsValid(index)) {
+        continue;
+      }
+
       // set index of selection vector
       blob_sel.set_index(index, batch_nr);
       // cipher contains the (masked) position in the block
@@ -299,7 +310,6 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
       cipher_vec_data[index] = MaskCipher(j, &plaintext_bytes, false);
       // counter is used to identify the delta of the nonce
       counter_vec_data[index] = batch_nr;
-
       index++;
     }
 
@@ -367,7 +377,6 @@ static void EncryptDataVectorized(DataChunk &args, ExpressionState &state,
       throw NotImplementedException("Unsupported numeric type for encryption");
 }
 }
-
 
 
 ScalarFunctionSet GetEncryptionVectorizedFunction() {
