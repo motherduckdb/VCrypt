@@ -71,6 +71,14 @@ AESStateSSL::~AESStateSSL() {
 
 bool AESStateSSL::IsOpenSSL() { return ssl; }
 
+uint32_t AESStateSSL::GetCurrentIVLength() {
+  return EVP_CIPHER_CTX_iv_length(context);
+}
+
+void AESStateSSL::GetCurrentIV(uint32_t* current_iv, uint32_t iv_len){
+  EVP_CIPHER_CTX_get_updated_iv(context, current_iv, iv_len);
+}
+
 void AESStateSSL::SetEncryptionAlgorithm(string_t s_algorithm) {
 
   if (s_algorithm == "GCM") {
@@ -116,6 +124,18 @@ void AESStateSSL::InitializeDecryption(const_data_ptr_t iv, idx_t iv_len,
 
 size_t AESStateSSL::Process(const_data_ptr_t in, idx_t in_len, data_ptr_t out,
                             idx_t out_len) {
+
+  uint32_t iv_len = GetCurrentIVLength();
+  uint32_t iv_buf[4];
+
+  D_ASSERT(iv_len == 16);
+
+  GetCurrentIV(iv_buf, iv_len);
+
+  auto iv0 = iv_buf[0];
+  auto iv1 = iv_buf[1];
+  auto iv2 = iv_buf[2];
+  auto iv3 = iv_buf[3];
 
   switch (mode) {
   case ENCRYPT:

@@ -29,6 +29,21 @@ namespace simple_encryption {
 
 namespace core {
 
+void IncrementIV(uint8_t *iv, uint32_t increment){
+  // based on openssl ctr increment function
+  // https://github.com/openssl/openssl/blob/master/crypto/modes/ctr128.c
+
+  uint32_t n = 16;
+
+  do {
+    --n;
+    increment += iv[n];
+    iv[n] = (uint8_t)increment;
+    increment >>= 8;
+  } while (n && increment);
+
+}
+
 uint16_t UnMaskCipher(uint16_t cipher, uint64_t *plaintext_bytes) {
   //  const uint64_t prime = 10251357202697351;
   //  auto const a_plaintext = plaintext_bytes + 1;
@@ -49,14 +64,6 @@ uint16_t UnMaskCipher(uint16_t cipher, uint64_t *plaintext_bytes) {
   //
   //  return cipher;
   return cipher;
-}
-
-LogicalType CreateDecryptionStruct() {
-  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-                              {"nonce_lo", LogicalType::UBIGINT},
-                              {"counter", LogicalType::UINTEGER},
-                              {"cipher", LogicalType::SMALLINT},
-                              {"value", LogicalType::BLOB}});
 }
 
 bool CheckNonce(Vector &nonce_hi, Vector &nonce_lo, uint64_t size) {
@@ -178,6 +185,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
                       ExpressionState &state, Vector &result) {
 
   // todo; cache decrypted texts
+  auto batch_size = BATCH_SIZE;
 
   // TODO: check validity when storing decrypted values
   ValidityMask &result_validity = FlatVector::Validity(result);
@@ -219,7 +227,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   auto nonce_hi_data = FlatVector::GetData<uint64_t>(*nonce_hi);
   auto nonce_lo_data = FlatVector::GetData<uint32_t>(*nonce_lo);
 
-  lstate.to_process_total = size;
+  auto to_process_total = size;
 
   if (!CheckNonce(*nonce_hi, *nonce_lo, size)) {
     // nonce is not sequential, go to per value implementation
@@ -234,12 +242,15 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   lstate.iv[2] = nonce_lo_data[0];
   lstate.iv[3] = counter_vec_data[0];
 
-  idx_t current_batch = 0;
-  uint32_t total_batches = floor(size / lstate.batch_size);
+  uint64_t current_batch = 0;
+  // todo; hardcode this at 16
+  uint64_t total_batches = (size + 128 - 1) / 128;
   idx_t current_index = 0;
 
   while (current_batch < total_batches) {
-    for (idx_t j = 0; j < lstate.batch_size; j++) {
+
+    for (idx_t j = 0; j < 128; j++) {
+      // check if pointers are in the same batch
       // check if the counter is sequential
       if (counter_vec_data[current_index] ==
           counter_vec_data[current_index + j]) {
@@ -250,13 +261,23 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
       throw NotImplementedException("Non-sequential nonce not yet supported");
       break;
     }
-    current_index += lstate.batch_size;
+
+#if 0
+    if (value_vec_data[current_index + lstate.batch_size].GetPointer() - value_vec_data[current_index].GetPointer() != lstate.batch_size_in_bytes) {
+auto ptr_1 = value_vec_data[current_index + lstate.batch_size].GetPointer();
+auto ptr_2 = value_vec_data[current_index].GetPointer();
+auto diff = ptr_1 - ptr_2;
+throw OutOfRangeException("Pointers are not consequetive, difference: %d", diff);
+}
+#endif
+
+    current_index += batch_size;
     current_batch++;
   }
 
   // case; if values in vector < standard batch size
   if (lstate.to_process_total < BATCH_SIZE) {
-    lstate.batch_size = lstate.to_process_total;
+    batch_size = lstate.to_process_total;
   }
 
   auto total_size = sizeof(T) * size;
@@ -264,16 +285,79 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   // vectorized implementation for sequential counter
   lstate.batch_size_in_bytes = sizeof(T) * BATCH_SIZE;
 
-  // initialize encryption
+  // initialize decryption
   encryption_state->InitializeDecryption(
       reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
       reinterpret_cast<const string *>(key));
 
-  encryption_state->Process(
-      reinterpret_cast<const_data_ptr_t>(value_vec_data[0].GetData()),
-      total_size, reinterpret_cast<unsigned char *>(result_data), total_size);
+  // decrypt each block
+  // todo; for now assume everything is multiple of 128
+  uint32_t base_idx = 0;
+
+  auto to_process_batch = size;
+  for (uint32_t batch = 0; batch < total_batches; batch++) {
+
+    auto increment = counter_vec_data[base_idx] * (BATCH_SIZE * sizeof(T) / 16);
+    uint8_t *current_iv[16];
+    memcpy(current_iv, lstate.iv, 16);
+
+    IncrementIV(reinterpret_cast<uint8_t *>(current_iv), increment);
+
+    // lstate.iv[3] = counter_vec_data[base_idx] * (BATCH_SIZE * sizeof(T) / 16);
+
+    encryption_state->InitializeDecryption(
+        reinterpret_cast<const_data_ptr_t>(current_iv), 16,
+        reinterpret_cast<const string *>(key));
+
+    encryption_state->Process(
+        reinterpret_cast<const_data_ptr_t>(value_vec_data[base_idx].GetData()),
+        1024,
+        reinterpret_cast<unsigned char *>(result_data + base_idx),
+        1024);
+
+    base_idx += 128;
+
+    // todo: optimize
+    if (to_process_batch > BATCH_SIZE) {
+      to_process_batch -= BATCH_SIZE;
+    } else {
+      // processing finalized
+      to_process_batch = 0;
+      break;
+    }
+
+    if (to_process_batch < BATCH_SIZE) {
+      batch_size = to_process_batch;
+      lstate.batch_size_in_bytes = to_process_batch * sizeof(T);
+    }
+  }
+
+//
+//    uint64_t buf[2048];
+//    for(uint64_t i = 0; i < size; i++){
+//      buf[i] = i;
+//    }
+////
+//    result_data[128] = Load<T>(reinterpret_cast<const_data_ptr_t>(buf + processed));
+//    result_data[129] = Load<T>(reinterpret_cast<const_data_ptr_t>(buf + total_batches));
+//    result_data[130] = Load<T>(reinterpret_cast<const_data_ptr_t>(buf + 42));
+//    result_data[130] = Load<T>(reinterpret_cast<const_data_ptr_t>(buf + 42));
+
+//    for(uint64_t i = 0; i < size; i++){
+//      result_data[128] = Load<T>(reinterpret_cast<const_data_ptr_t>(buf));
+//    }
 
 }
+
+//
+//  for(uint64_t i = 0; i < size; i++){
+//    result_data[i] = Load<T>(reinterpret_cast<const_data_ptr_t>(buf));
+//  }
+  //
+  //  encryption_state->Process(
+  //      reinterpret_cast<const_data_ptr_t>(value_vec_data[0].GetData()),
+  //      total_size, reinterpret_cast<unsigned char *>(result_data), total_size);
+
 
 static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
                                   Vector &result) {

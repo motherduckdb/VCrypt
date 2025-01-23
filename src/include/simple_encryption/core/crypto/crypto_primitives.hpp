@@ -30,6 +30,8 @@ public:
   size_t Finalize(data_ptr_t out, idx_t out_len, data_ptr_t tag,
                   idx_t tag_len) override;
   void GenerateRandomData(data_ptr_t data, idx_t len) override;
+  void GetCurrentIV(uint32_t* current_iv, uint32_t iv_len);
+  uint32_t GetCurrentIVLength();
 
   // crypto-specific functions
   void SetEncryptionAlgorithm(string_t s_algorithm);

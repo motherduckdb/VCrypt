@@ -62,8 +62,8 @@ ProcessAndCastEncrypt(shared_ptr<EncryptionState> encryption_state,
 
   // convert to Base64 into a newly allocated string in the result vector
   T base64_data = StringVector::EmptyString(*result_vector, base64_size);
-  base64_data.Finalize();
   Blob::ToBase64(encrypted_data, base64_data.GetDataWriteable());
+  base64_data.Finalize();
 
   return base64_data;
 }
