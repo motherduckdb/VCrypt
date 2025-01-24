@@ -152,6 +152,8 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
 
     encrypted_string.Finalize();
 
+    idx_t current_index = batch_nr * 128;
+
     // iterate through a single batch
     for (uint32_t i = 0; i < lstate.batch_size; i++) {
 
@@ -159,10 +161,10 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
         continue;
       }
 
-      blob_vec_data[lstate.index] = encrypted_string;
-      cipher_vec_data[lstate.index] = MaskCipher(i, &plaintext_bytes, false);
-      counter_vec_data[lstate.index] = batch_nr;
-      lstate.index++;
+      blob_vec_data[current_index] = encrypted_string;
+      cipher_vec_data[current_index] = MaskCipher(i, &plaintext_bytes, false);
+      counter_vec_data[current_index] = batch_nr;
+      current_index++;
     }
 
     base_ptr += lstate.batch_size_in_bytes;
