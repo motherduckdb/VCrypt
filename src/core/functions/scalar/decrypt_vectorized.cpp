@@ -23,8 +23,6 @@
 #include "simple_encryption/core/functions/scalar/encrypt.hpp"
 #include "simple_encryption/core/functions/function_data/encrypt_function_data.hpp"
 
-#define BATCH_SIZE 128
-
 namespace simple_encryption {
 
 namespace core {
@@ -42,6 +40,21 @@ void IncrementIV(uint8_t *iv, uint32_t increment){
     increment >>= 8;
   } while (n && increment);
 
+}
+
+template <typename T>
+void ResetIV(uint32_t counter_val, shared_ptr<EncryptionState> &encryption_state, VCryptFunctionLocalState &lstate, const string *key) {
+
+  auto increment = counter_val * (BATCH_SIZE * sizeof(T) / 16);
+  uint8_t *current_iv[16];
+  memcpy(current_iv, lstate.iv, 16);
+  IncrementIV(reinterpret_cast<uint8_t *>(current_iv), increment);
+
+  lstate.iv[3] = increment;
+
+  encryption_state->InitializeDecryption(
+      reinterpret_cast<const_data_ptr_t>(current_iv), 16,
+      key);
 }
 
 uint16_t UnMaskCipher(uint16_t cipher, uint64_t *plaintext_bytes) {
@@ -96,34 +109,35 @@ bool CheckNonce(Vector &nonce_hi, Vector &nonce_lo, uint64_t size) {
   return true;
 }
 
+
 template <typename T>
-void DecryptPerValue(uint64_t nonce_hi_data, uint32_t *nonce_lo_data,
+void DecryptPerValue(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
                      uint32_t *counter_vec_data, uint16_t *cipher_vec_data,
                      string_t *value_vec_data, uint64_t size, Vector &result,
                      VCryptFunctionLocalState &lstate,
-                     EncryptionState &encryption_state, const string &key) {
+                     shared_ptr<EncryptionState> &encryption_state, const string &key) {
 
   ValidityMask &result_validity = FlatVector::Validity(result);
   result.SetVectorType(VectorType::FLAT_VECTOR);
   auto result_data = FlatVector::GetData<T>(result);
 
-  uint32_t i = 0;
+  uint32_t batch_size = 128;
 
-  // todo; fix
+  uint32_t i = 0;
   while (nonce_lo_data[i] == lstate.iv[2]) {
     i++;
   }
 
-  lstate.to_process_batch = i;
+  auto to_process_batch = i;
 
   for (uint32_t j = 0; j < size; j++) {
     if (lstate.counter != counter_vec_data[j]) {
+      // case: if counter is not sequential
       if (lstate.counter + 1 != counter_vec_data[j]) {
-        // case: if counter is not sequential
-        // copy delta to last 4 bytes of iv
-        lstate.iv[3] = counter_vec_data[j] * (BATCH_SIZE * sizeof(T) / 16);
+        // Reset the IV
+         ResetIV<T>(counter_vec_data[j], encryption_state, lstate, &key);
         // (re)initialize encryption state
-        encryption_state.InitializeDecryption(
+        encryption_state->InitializeDecryption(
             reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
             reinterpret_cast<const string *>(&key));
       }
@@ -131,7 +145,7 @@ void DecryptPerValue(uint64_t nonce_hi_data, uint32_t *nonce_lo_data,
       lstate.counter = counter_vec_data[j];
 
       // todo; cache the decrypted plaintext
-      encryption_state.Process(
+      encryption_state->Process(
           reinterpret_cast<const_data_ptr_t>(value_vec_data[j].GetData()),
           lstate.batch_size_in_bytes,
           reinterpret_cast<unsigned char *>(lstate.buffer_p),
@@ -152,7 +166,7 @@ void DecryptPerValue(uint64_t nonce_hi_data, uint32_t *nonce_lo_data,
       }
 
       uint32_t offset = 0;
-      if (seq_size == lstate.batch_size) {
+      if (seq_size == batch_size) {
         // all values are in the same batch
         // copy the decrypted data to the result vector
         for (uint32_t i = 0; i < seq_size; i++) {
@@ -185,7 +199,6 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
                       ExpressionState &state, Vector &result) {
 
   // todo; cache decrypted texts
-  auto batch_size = BATCH_SIZE;
 
   // TODO: check validity when storing decrypted values
   ValidityMask &result_validity = FlatVector::Validity(result);
@@ -235,6 +248,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   }
 
   auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
+  auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
 
   // assign the right parts of the nonce and counter to iv
   lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[0] >> 32);
@@ -242,24 +256,22 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   lstate.iv[2] = nonce_lo_data[0];
   lstate.iv[3] = counter_vec_data[0];
 
+  volatile uint32_t batch_size = 128;
+  uint32_t batch_size_in_bytes = sizeof(T) * batch_size;
   uint64_t current_batch = 0;
-  // todo; hardcode this at 16
-  uint64_t total_batches = (size + 128 - 1) / 128;
+  uint64_t total_batches = (size + batch_size - 1) / batch_size;
   idx_t current_index = 0;
 
   while (current_batch < total_batches) {
-
-    for (idx_t j = 0; j < 128; j++) {
-      // check if pointers are in the same batch
+    for (idx_t j = 0; j < batch_size; j++) {
       // check if the counter is sequential
       if (counter_vec_data[current_index] ==
           counter_vec_data[current_index + j]) {
         continue;
       }
       // if not sequential go to other implementation
-      // to do: go to per-value implementation
-      throw NotImplementedException("Non-sequential nonce not yet supported");
-      break;
+      DecryptPerValue<T>(nonce_hi_data, nonce_lo_data, counter_vec_data, cipher_vec_data,
+                      value_vec_data, size, result, lstate, encryption_state, *key);
     }
 
 #if 0
@@ -275,88 +287,50 @@ throw OutOfRangeException("Pointers are not consequetive, difference: %d", diff)
     current_batch++;
   }
 
+  to_process_total = size;
   // case; if values in vector < standard batch size
-  if (lstate.to_process_total < BATCH_SIZE) {
-    batch_size = lstate.to_process_total;
+  if (to_process_total < BATCH_SIZE) {
+    batch_size = to_process_total;
   }
 
   auto total_size = sizeof(T) * size;
-
-  // vectorized implementation for sequential counter
-  lstate.batch_size_in_bytes = sizeof(T) * BATCH_SIZE;
 
   // initialize decryption
   encryption_state->InitializeDecryption(
       reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
       reinterpret_cast<const string *>(key));
 
-  // decrypt each block
-  // todo; for now assume everything is multiple of 128
-  uint32_t base_idx = 0;
+  // decrypt each block independently
+  volatile uint32_t base_idx = 0;
 
   auto to_process_batch = size;
+
   for (uint32_t batch = 0; batch < total_batches; batch++) {
-
-    auto increment = counter_vec_data[base_idx] * (BATCH_SIZE * sizeof(T) / 16);
-    uint8_t *current_iv[16];
-    memcpy(current_iv, lstate.iv, 16);
-
-    IncrementIV(reinterpret_cast<uint8_t *>(current_iv), increment);
-
-    // lstate.iv[3] = counter_vec_data[base_idx] * (BATCH_SIZE * sizeof(T) / 16);
-
-    encryption_state->InitializeDecryption(
-        reinterpret_cast<const_data_ptr_t>(current_iv), 16,
-        reinterpret_cast<const string *>(key));
-
+    std::cout << "batch_size = " << batch_size;
+    //    auto increment = counter_vec_data[base_idx] * (BATCH_SIZE * sizeof(T) / 16); ResetIv(increment, encryption_state, lstate, key)
     encryption_state->Process(
         reinterpret_cast<const_data_ptr_t>(value_vec_data[base_idx].GetData()),
-        1024,
+        batch_size_in_bytes,
         reinterpret_cast<unsigned char *>(result_data + base_idx),
-        1024);
+        batch_size_in_bytes);
 
-    base_idx += 128;
+    base_idx += batch_size;
 
     // todo: optimize
-    if (to_process_batch > BATCH_SIZE) {
-      to_process_batch -= BATCH_SIZE;
+    if (to_process_batch > batch_size) {
+      to_process_batch -= batch_size;
     } else {
       // processing finalized
       to_process_batch = 0;
       break;
     }
 
-    if (to_process_batch < BATCH_SIZE) {
+    if (to_process_batch < batch_size) {
       batch_size = to_process_batch;
-      lstate.batch_size_in_bytes = to_process_batch * sizeof(T);
+      batch_size_in_bytes = to_process_batch * sizeof(T);
     }
   }
-
-//
-//    uint64_t buf[2048];
-//    for(uint64_t i = 0; i < size; i++){
-//      buf[i] = i;
-//    }
-////
-//    result_data[128] = Load<T>(reinterpret_cast<const_data_ptr_t>(buf + processed));
-//    result_data[129] = Load<T>(reinterpret_cast<const_data_ptr_t>(buf + total_batches));
-//    result_data[130] = Load<T>(reinterpret_cast<const_data_ptr_t>(buf + 42));
-//    result_data[130] = Load<T>(reinterpret_cast<const_data_ptr_t>(buf + 42));
-
-//    for(uint64_t i = 0; i < size; i++){
-//      result_data[128] = Load<T>(reinterpret_cast<const_data_ptr_t>(buf));
-//    }
-
 }
-
-//
-//  for(uint64_t i = 0; i < size; i++){
-//    result_data[i] = Load<T>(reinterpret_cast<const_data_ptr_t>(buf));
-//  }
-  //
-  //  encryption_state->Process(
-  //      reinterpret_cast<const_data_ptr_t>(value_vec_data[0].GetData()),
-  //      total_size, reinterpret_cast<unsigned char *>(result_data), total_size);
 
 
 static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
