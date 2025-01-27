@@ -109,9 +109,24 @@ bool CheckNonce(Vector &nonce_hi, Vector &nonce_lo, uint64_t size) {
   return true;
 }
 
-
 template <typename T>
 void DecryptPerValue(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
+                          uint32_t *counter_vec_data, uint16_t *cipher_vec_data,
+                          string_t *value, uint64_t size, Vector &result,
+                          VCryptFunctionLocalState &lstate,
+                          shared_ptr<EncryptionState> &encryption_state, const string &key) {
+
+  ValidityMask &result_validity = FlatVector::Validity(result);
+  result.SetVectorType(VectorType::FLAT_VECTOR);
+  auto result_data = FlatVector::GetData<T>(result);
+
+  // if value in cache, calculate position and load, else Decrypt, put in cache, calculate position and Load if (InCache(value)){
+//
+
+  }
+
+template <typename T>
+void DecryptPerValueBatch(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
                      uint32_t *counter_vec_data, uint16_t *cipher_vec_data,
                      string_t *value_vec_data, uint64_t size, Vector &result,
                      VCryptFunctionLocalState &lstate,
@@ -124,11 +139,9 @@ void DecryptPerValue(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
   uint32_t batch_size = 128;
 
   uint32_t i = 0;
-  while (nonce_lo_data[i] == lstate.iv[2]) {
+  while (nonce_hi_data[i] == lstate.iv[1] && nonce_lo_data[i] == lstate.iv[2]) {
     i++;
   }
-
-  auto to_process_batch = i;
 
   for (uint32_t j = 0; j < size; j++) {
     if (lstate.counter != counter_vec_data[j]) {
@@ -144,7 +157,6 @@ void DecryptPerValue(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
 
       lstate.counter = counter_vec_data[j];
 
-      // todo; cache the decrypted plaintext
       encryption_state->Process(
           reinterpret_cast<const_data_ptr_t>(value_vec_data[j].GetData()),
           lstate.batch_size_in_bytes,
@@ -153,7 +165,6 @@ void DecryptPerValue(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
 
       // copy first 64 bits of plaintext to uncipher the cipher
       uint64_t plaintext_bytes;
-
       // if cipher != seq then it's not in order and values need to be scattered
       memcpy(&plaintext_bytes, lstate.buffer_p, sizeof(uint64_t));
       // do already multiplication here
@@ -166,6 +177,7 @@ void DecryptPerValue(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
       }
 
       uint32_t offset = 0;
+
       if (seq_size == batch_size) {
         // all values are in the same batch
         // copy the decrypted data to the result vector
@@ -270,7 +282,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
         continue;
       }
       // if not sequential go to other implementation
-      DecryptPerValue<T>(nonce_hi_data, nonce_lo_data, counter_vec_data, cipher_vec_data,
+      DecryptPerValueBatch<T>(nonce_hi_data, nonce_lo_data, counter_vec_data, cipher_vec_data,
                       value_vec_data, size, result, lstate, encryption_state, *key);
     }
 
@@ -292,8 +304,6 @@ throw OutOfRangeException("Pointers are not consequetive, difference: %d", diff)
   if (to_process_total < BATCH_SIZE) {
     batch_size = to_process_total;
   }
-
-  auto total_size = sizeof(T) * size;
 
   // initialize decryption
   encryption_state->InitializeDecryption(
