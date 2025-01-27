@@ -251,7 +251,7 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
 
 
 template <typename T>
-void DecryptFromEtype(Vector &input_vector, uint64_t size,
+void DecryptFromEtypeNaive(Vector &input_vector, uint64_t size,
                       ExpressionState &state, Vector &result) {
 
   // local state (contains key, buffer, iv etc.)
@@ -348,32 +348,32 @@ static void DecryptDataFromEtype(DataChunk &args, ExpressionState &state,
     switch (vector_type.id()) {
     case LogicalTypeId::TINYINT:
     case LogicalTypeId::UTINYINT:
-      return DecryptFromEtype<int8_t>(input_vector, size, state, result);
+      return DecryptFromEtypeNaive<int8_t>(input_vector, size, state, result);
     case LogicalTypeId::SMALLINT:
     case LogicalTypeId::USMALLINT:
-      return DecryptFromEtype<int16_t>(input_vector, size, state,
+      return DecryptFromEtypeNaive<int16_t>(input_vector, size, state,
                                        result);
     case LogicalTypeId::INTEGER:
-      return DecryptFromEtype<int32_t>(input_vector, size, state,
+      return DecryptFromEtypeNaive<int32_t>(input_vector, size, state,
                                        result);
     case LogicalTypeId::UINTEGER:
-      return DecryptFromEtype<uint32_t>(input_vector, size, state,
+      return DecryptFromEtypeNaive<uint32_t>(input_vector, size, state,
                                         result);
     case LogicalTypeId::BIGINT:
-      return DecryptFromEtype<int64_t>(input_vector, size, state,
+      return DecryptFromEtypeNaive<int64_t>(input_vector, size, state,
                                        result);
     case LogicalTypeId::UBIGINT:
-      return DecryptFromEtype<uint64_t>(input_vector, size, state,
+      return DecryptFromEtypeNaive<uint64_t>(input_vector, size, state,
                                         result);
     case LogicalTypeId::FLOAT:
-      return DecryptFromEtype<float>(input_vector, size, state, result);
+      return DecryptFromEtypeNaive<float>(input_vector, size, state, result);
     case LogicalTypeId::DOUBLE:
-      return DecryptFromEtype<double>(input_vector, size, state, result);
+      return DecryptFromEtypeNaive<double>(input_vector, size, state, result);
     default:
       throw NotImplementedException("Unsupported numeric type for decryption");
     }
   } else if (vector_type.id() == LogicalTypeId::VARCHAR) {
-    return DecryptFromEtype<string_t>(input_vector, size, state, result);
+    return DecryptFromEtypeNaive<string_t>(input_vector, size, state, result);
   } else if (vector_type.IsNested()) {
     throw NotImplementedException(
         "Nested types are not supported for decryption");
