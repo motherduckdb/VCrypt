@@ -115,17 +115,19 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
   encryption_state->InitializeEncryption(
       reinterpret_cast<const_data_ptr_t>(lstate.iv), 16, key);
 
+  auto batch_size = BATCH_SIZE;
+
   // todo; create separate function for strings
   lstate.to_process_batch = size;
   auto total_size = sizeof(T) * size;
 
-  if (lstate.to_process_batch > BATCH_SIZE) {
-    lstate.batch_size = BATCH_SIZE;
+  if (lstate.to_process_batch > batch_size) {
+    batch_size = BATCH_SIZE;
   } else {
-    lstate.batch_size = lstate.to_process_batch;
+    batch_size = lstate.to_process_batch;
   }
 
-  lstate.batch_size_in_bytes = lstate.batch_size * sizeof(T);
+  lstate.batch_size_in_bytes = batch_size * sizeof(T);
   uint64_t plaintext_bytes;
 
   auto base_ptr = StringVector::EmptyString(*blob_vec, total_size).GetDataWriteable();
@@ -155,7 +157,7 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
     idx_t current_index = batch_nr * 128;
 
     // iterate through a single batch
-    for (uint32_t i = 0; i < lstate.batch_size; i++) {
+    for (uint32_t i = 0; i < batch_size; i++) {
 
       if (!validity.RowIsValid(lstate.index)) {
         continue;
@@ -185,7 +187,7 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
     }
 
     if (lstate.to_process_batch < BATCH_SIZE) {
-      lstate.batch_size = lstate.to_process_batch;
+      batch_size = lstate.to_process_batch;
       lstate.batch_size_in_bytes = lstate.to_process_batch * sizeof(T);
     }
   }
@@ -261,17 +263,19 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   encryption_state->InitializeEncryption(
       reinterpret_cast<const_data_ptr_t>(lstate.iv), 16, key);
 
+  auto batch_size = BATCH_SIZE;
+
   // todo; create separate function for strings
   lstate.to_process_batch = size;
   auto total_size = sizeof(T) * size;
 
   if (lstate.to_process_batch > BATCH_SIZE) {
-    lstate.batch_size = BATCH_SIZE;
+    batch_size = BATCH_SIZE;
   } else {
-    lstate.batch_size = lstate.to_process_batch;
+    batch_size = lstate.to_process_batch;
   }
 
-  lstate.batch_size_in_bytes = lstate.batch_size * sizeof(T);
+  lstate.batch_size_in_bytes = batch_size * sizeof(T);
   uint64_t plaintext_bytes;
 
   encryption_state->Process(
@@ -298,7 +302,7 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
     blob_child_data[batch_nr].Finalize();
 
     // set index in selection vector
-    for (uint32_t j = 0; j < lstate.batch_size; j++) {
+    for (uint32_t j = 0; j < batch_size; j++) {
 
       if (!validity.RowIsValid(index)) {
         continue;
@@ -327,7 +331,7 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
     }
 
     if (lstate.to_process_batch < BATCH_SIZE) {
-      lstate.batch_size = lstate.to_process_batch;
+      batch_size = lstate.to_process_batch;
       lstate.batch_size_in_bytes = lstate.to_process_batch * sizeof(T);
     }
   }
