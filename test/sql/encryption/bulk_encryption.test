@@ -12,7 +12,7 @@ set allow_persistent_secrets=false;
 statement ok
 CREATE SECRET key_1 (
 	TYPE ENCRYPTION,
-    MASTER_KEY '0123456789112345',
+    TOKEN '0123456789112345',
     LENGTH 16
 );
 

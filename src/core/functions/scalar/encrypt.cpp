@@ -43,11 +43,11 @@ string* VCryptBasicFun::GetKey(ExpressionState &state) {
   return &info.key;
 }
 
-shared_ptr<EncryptionState> VCryptBasicFun::GetEncryptionState(ExpressionState &state) {
-  return VCryptBasicFun::GetVCryptState(state)->encryption_state;
-}
+//shared_ptr<EncryptionState> VCryptBasicFun::GetEncryptionState(ExpressionState &state) {
+//  return VCryptBasicFun::GetVCryptState(state)->encryption_state;
+//}
 
-shared_ptr<EncryptionUtil> GetEncryptionUtil(ExpressionState &state) {
+shared_ptr<EncryptionUtil> GetEncryptionUtilNaive(ExpressionState &state) {
   auto &func_expr = (BoundFunctionExpression &)state.expr;
   auto &info = (EncryptFunctionData &)*func_expr.bind_info;
   // get Database config
@@ -56,7 +56,7 @@ shared_ptr<EncryptionUtil> GetEncryptionUtil(ExpressionState &state) {
 }
 
 shared_ptr<EncryptionState> InitializeCryptoState(ExpressionState &state) {
-  auto encryption_state = GetEncryptionUtil(state);
+  auto encryption_state = GetEncryptionUtilNaive(state);
 
   if (!encryption_state) {
     return duckdb_mbedtls::MbedTlsWrapper::AESGCMStateMBEDTLSFactory()
