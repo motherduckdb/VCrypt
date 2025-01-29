@@ -25,6 +25,9 @@ VCryptFunctionLocalState::VCryptFunctionLocalState(ClientContext &context, Encry
   size_t data_size;
   LogicalType type = bind_data->type;
 
+  // set pointer to encryption primitives (mbedtls or openssl)
+  encryption_state = bind_data->encryption_util->CreateEncryptionState();
+
   // todo; fix this for all other types
   // todo; now it allocates per vector size, but for var-sized data this is tricky
   if (type == LogicalType::VARCHAR) {

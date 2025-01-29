@@ -209,7 +209,6 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
   // global, local and encryption state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
   auto vcrypt_state = GetSimpleEncryptionState(state);
-  auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
 
   // Get Key from Bind
   auto key = VCryptBasicFun::GetKey(state);
@@ -225,7 +224,7 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
   using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
   using PLAINTEXT_TYPE = PrimitiveType<T>;
 
-  encryption_state->InitializeEncryption(
+  lstate.encryption_state->InitializeEncryption(
       reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
       reinterpret_cast<const string *>(key));
 
@@ -235,12 +234,12 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
         lstate.iv[1]++;
         lstate.counter++;
 
-        encryption_state->InitializeEncryption(
+        lstate.encryption_state->InitializeEncryption(
             reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
             reinterpret_cast<const string *>(key));
 
         T encrypted_data =
-            ProcessAndCastEncrypt(encryption_state, result, input.val,
+            ProcessAndCastEncrypt(lstate.encryption_state, result, input.val,
                                   lstate.buffer_p);
 
         return ENCRYPTED_TYPE{lstate.iv[0],
@@ -258,8 +257,6 @@ void DecryptFromEtypeNaive(Vector &input_vector, uint64_t size,
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
   // global state
   auto vcrypt_state = GetSimpleEncryptionState(state);
-  auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
-
   // Get Key from Bind
   auto key = VCryptBasicFun::GetKey(state);
 
@@ -271,12 +268,12 @@ void DecryptFromEtypeNaive(Vector &input_vector, uint64_t size,
         lstate.iv[0] = input.a_val;
         lstate.iv[1] = input.b_val;
 
-        encryption_state->InitializeDecryption(
+        lstate.encryption_state->InitializeDecryption(
             reinterpret_cast<const_data_ptr_t>(lstate.iv), 12,
             reinterpret_cast<const string *>(key));
 
         T decrypted_data =
-            ProcessAndCastDecrypt(encryption_state, result, input.c_val,
+            ProcessAndCastDecrypt(lstate.encryption_state, result, input.c_val,
                                   lstate.buffer_p);
         return decrypted_data;
       });

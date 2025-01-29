@@ -15,7 +15,6 @@ public:
   // should we make this private?
 public:
   shared_ptr<ClientContext> context_p;
-  shared_ptr<EncryptionState> encryption_state;
   shared_ptr<EncryptionUtil> encryption_util;
 
   // nonce metadata

@@ -43,18 +43,16 @@ void IncrementIV(uint8_t *iv, uint32_t increment){
 }
 
 template <typename T>
-void ResetIV(uint32_t counter_val, shared_ptr<EncryptionState> &encryption_state, VCryptFunctionLocalState &lstate, const string *key) {
+void ResetIV(uint32_t counter_val, VCryptFunctionLocalState &lstate) {
+
+  if (counter_val == 0) {
+    lstate.iv[3] = 0;
+    return;
+  }
 
   auto increment = counter_val * (BATCH_SIZE * sizeof(T) / 16);
-  uint8_t *current_iv[16];
-  memcpy(current_iv, lstate.iv, 16);
-  IncrementIV(reinterpret_cast<uint8_t *>(current_iv), increment);
+  IncrementIV(reinterpret_cast<uint8_t *>(lstate.iv), increment);
 
-  lstate.iv[3] = increment;
-
-  encryption_state->InitializeDecryption(
-      reinterpret_cast<const_data_ptr_t>(current_iv), 16,
-      key);
 }
 
 uint16_t UnMaskCipher(uint16_t cipher, uint64_t *plaintext_bytes) {
@@ -145,10 +143,9 @@ void DecryptPerValueBatch(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
 
   for (uint32_t j = 0; j < size; j++) {
     if (lstate.counter != counter_vec_data[j]) {
-      // case: if counter is not sequential
       if (lstate.counter + 1 != counter_vec_data[j]) {
-        // Reset the IV
-         ResetIV<T>(counter_vec_data[j], encryption_state, lstate, &key);
+        // case: if counter is not sequential, Reset the IV
+         ResetIV<T>(counter_vec_data[j], lstate);
         // (re)initialize encryption state
         encryption_state->InitializeDecryption(
             reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
@@ -220,7 +217,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   // local, vcrypt (global) and encryption state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
   auto vcrypt_state = VCryptBasicFun::GetVCryptState(state);
-  auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
+  // auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
   auto key = VCryptBasicFun::GetKey(state);
 
   D_ASSERT(input_vector.GetType().id() == LogicalTypeId::STRUCT);
@@ -266,7 +263,6 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[0] >> 32);
   lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[0] & 0xFFFFFFFF);
   lstate.iv[2] = nonce_lo_data[0];
-  lstate.iv[3] = counter_vec_data[0];
 
   volatile uint32_t batch_size = 128;
   uint32_t batch_size_in_bytes = sizeof(T) * batch_size;
@@ -283,7 +279,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
       }
       // if not sequential go to other implementation
       DecryptPerValueBatch<T>(nonce_hi_data, nonce_lo_data, counter_vec_data, cipher_vec_data,
-                      value_vec_data, size, result, lstate, encryption_state, *key);
+                      value_vec_data, size, result, lstate, lstate.encryption_state, *key);
     }
 
 #if 0
@@ -305,20 +301,23 @@ throw OutOfRangeException("Pointers are not consequetive, difference: %d", diff)
     batch_size = to_process_total;
   }
 
-  // initialize decryption
-  encryption_state->InitializeDecryption(
-      reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
-      reinterpret_cast<const string *>(key));
+  if (lstate.batch_nr == 0) {
+    // TODO; this does not work well yet, need to check if the IV is set correctly
+    // what happens: after two vectors the IV counter is probably incorrect?
+    ResetIV<T>(counter_vec_data[0], lstate);
+    // initialize encryption state
+    lstate.encryption_state->InitializeDecryption(
+        reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
+        reinterpret_cast<const string *>(key));
+  }
 
   // decrypt each block independently
   volatile uint32_t base_idx = 0;
-
   auto to_process_batch = size;
 
   for (uint32_t batch = 0; batch < total_batches; batch++) {
-    std::cout << "batch_size = " << batch_size;
-    //    auto increment = counter_vec_data[base_idx] * (BATCH_SIZE * sizeof(T) / 16); ResetIv(increment, encryption_state, lstate, key)
-    encryption_state->Process(
+
+    lstate.encryption_state->Process(
         reinterpret_cast<const_data_ptr_t>(value_vec_data[base_idx].GetData()),
         batch_size_in_bytes,
         reinterpret_cast<unsigned char *>(result_data + base_idx),
@@ -340,6 +339,8 @@ throw OutOfRangeException("Pointers are not consequetive, difference: %d", diff)
       batch_size_in_bytes = to_process_batch * sizeof(T);
     }
   }
+
+  lstate.batch_nr += total_batches;
 }
 
 

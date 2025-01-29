@@ -14,8 +14,10 @@ public:
 
   uint32_t counter = -2;
   uint32_t index = 0;
+  uint32_t batch_nr = 0;
   uint32_t to_process_batch;
   uint64_t batch_size_in_bytes;
+  shared_ptr<EncryptionState> encryption_state;
 
   data_ptr_t buffer_p;
 public:
