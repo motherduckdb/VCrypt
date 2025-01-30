@@ -45,14 +45,15 @@ void IncrementIV(uint8_t *iv, uint32_t increment){
 template <typename T>
 void ResetIV(uint32_t counter_val, VCryptFunctionLocalState &lstate) {
 
+  // counter needs to start from 0 before updating it
+  lstate.iv[3] = 0;
+
   if (counter_val == 0) {
-    lstate.iv[3] = 0;
     return;
   }
 
   auto increment = counter_val * (BATCH_SIZE * sizeof(T) / 16);
   IncrementIV(reinterpret_cast<uint8_t *>(lstate.iv), increment);
-
 }
 
 uint16_t UnMaskCipher(uint16_t cipher, uint64_t *plaintext_bytes) {
@@ -301,7 +302,7 @@ throw OutOfRangeException("Pointers are not consequetive, difference: %d", diff)
     batch_size = to_process_total;
   }
 
-  if (lstate.batch_nr == 0) {
+//  if (lstate.batch_nr == 0) {
     // TODO; this does not work well yet, need to check if the IV is set correctly
     // what happens: after two vectors the IV counter is probably incorrect?
     ResetIV<T>(counter_vec_data[0], lstate);
@@ -309,7 +310,7 @@ throw OutOfRangeException("Pointers are not consequetive, difference: %d", diff)
     lstate.encryption_state->InitializeDecryption(
         reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
         reinterpret_cast<const string *>(key));
-  }
+//  }
 
   // decrypt each block independently
   volatile uint32_t base_idx = 0;
