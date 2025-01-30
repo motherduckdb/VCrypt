@@ -1,0 +1,38 @@
+# name: test/sql/vectorized/vectorized_shuffle.test
+# description: Test vectorized encrypt and decrypt scalar function on shuffled data (so not sequential)
+# group: [simple-encryption/vectorized]
+
+require simple_encryption
+
+# Ensure any currently stored secrets don't interfere with the test
+statement ok
+set allow_persistent_secrets=false;
+
+# Create an internal secret (for internal encryption of columns)
+statement ok
+CREATE SECRET key_1 (
+	TYPE ENCRYPTION,
+    TOKEN '0123456789112345',
+    LENGTH 16
+);
+
+statement ok
+CREATE TABLE test_1  AS SELECT range AS value FROM range(1000);
+
+statement ok
+ALTER TABLE test_1 ADD COLUMN encrypted_values STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, counter UINTEGER, cipher UINTEGER, value BLOB, type TINYINT);
+
+statement ok
+ALTER TABLE test_1 ADD COLUMN decrypted_values BIGINT;
+
+statement ok
+UPDATE test_1 SET encrypted_values = encrypt_vectorized(value, 'key_1');
+
+statement ok
+CREATE TABLE shuffle AS SELECT * FROM test_1 ORDER BY hash(rowid);
+
+statement ok
+UPDATE shuffle SET decrypted_values = decrypt_vectorized(encrypted_values, 'key_1');
+
+statement ok
+SELECT decrypted_values FROM shuffle LIMIT 10;

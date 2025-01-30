@@ -109,20 +109,43 @@ bool CheckNonce(Vector &nonce_hi, Vector &nonce_lo, uint64_t size) {
 }
 
 template <typename T>
-void DecryptPerValue(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
-                          uint32_t *counter_vec_data, uint16_t *cipher_vec_data,
-                          string_t *value, uint64_t size, Vector &result,
+void DecryptSingleValue(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
+                          uint32_t counter_value, uint16_t cipher_value,
+                          string_t value, T *result_data,
                           VCryptFunctionLocalState &lstate,
-                          shared_ptr<EncryptionState> &encryption_state, const string &key) {
+                          const string &key){
 
-  ValidityMask &result_validity = FlatVector::Validity(result);
-  result.SetVectorType(VectorType::FLAT_VECTOR);
-  auto result_data = FlatVector::GetData<T>(result);
+  // TODO; create caching mechanism in the local state
 
-  // if value in cache, calculate position and load, else Decrypt, put in cache, calculate position and Load if (InCache(value)){
-//
+  // reset IV and initialize encryption state
+  ResetIV<T>(counter_value, lstate);
+  lstate.encryption_state->InitializeDecryption(
+        reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
+        reinterpret_cast<const string *>(&key));
 
-  }
+  // decrypt the value into buffer_p
+  lstate.encryption_state->Process(
+      reinterpret_cast<const_data_ptr_t>(value.GetData()),
+      lstate.batch_size_in_bytes,
+      reinterpret_cast<unsigned char *>(lstate.buffer_p),
+      lstate.batch_size_in_bytes);
+
+    // copy first 64 bits of plaintext to uncipher the cipher
+    uint64_t plaintext_bytes;
+
+    // if cipher != seq then it's not in order and values need to be scattered
+    memcpy(&plaintext_bytes, lstate.buffer_p, sizeof(uint64_t));
+
+    // Get position from cipher
+    uint16_t position = UnMaskCipher(cipher_value, &plaintext_bytes);
+
+    // Load data into result vector
+    result_data[lstate.index] = Load<T>(lstate.buffer_p + position * sizeof(T));
+
+    // increase index of vector
+    lstate.index++;
+}
+
 
 template <typename T>
 void DecryptPerValueBatch(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
@@ -283,15 +306,6 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
                       value_vec_data, size, result, lstate, lstate.encryption_state, *key);
     }
 
-#if 0
-    if (value_vec_data[current_index + lstate.batch_size].GetPointer() - value_vec_data[current_index].GetPointer() != lstate.batch_size_in_bytes) {
-auto ptr_1 = value_vec_data[current_index + lstate.batch_size].GetPointer();
-auto ptr_2 = value_vec_data[current_index].GetPointer();
-auto diff = ptr_1 - ptr_2;
-throw OutOfRangeException("Pointers are not consequetive, difference: %d", diff);
-}
-#endif
-
     current_index += batch_size;
     current_batch++;
   }
@@ -302,7 +316,7 @@ throw OutOfRangeException("Pointers are not consequetive, difference: %d", diff)
     batch_size = to_process_total;
   }
 
-//  if (lstate.batch_nr == 0) {
+  if (lstate.batch_nr == 0) {
     // TODO; this does not work well yet, need to check if the IV is set correctly
     // what happens: after two vectors the IV counter is probably incorrect?
     ResetIV<T>(counter_vec_data[0], lstate);
@@ -310,7 +324,7 @@ throw OutOfRangeException("Pointers are not consequetive, difference: %d", diff)
     lstate.encryption_state->InitializeDecryption(
         reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
         reinterpret_cast<const string *>(key));
-//  }
+  }
 
   // decrypt each block independently
   volatile uint32_t base_idx = 0;
