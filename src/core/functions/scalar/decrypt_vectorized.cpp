@@ -109,7 +109,7 @@ bool CheckNonce(Vector &nonce_hi, Vector &nonce_lo, uint64_t size) {
 }
 
 template <typename T>
-void DecryptSingleValue(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
+void DecryptSingleValue(
                           uint32_t counter_value, uint16_t cipher_value,
                           string_t value, T *result_data,
                           VCryptFunctionLocalState &lstate,
@@ -144,6 +144,35 @@ void DecryptSingleValue(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
 
     // increase index of vector
     lstate.index++;
+}
+
+template <typename T>
+void DecryptPerValue(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
+                 uint32_t *counter_vec_data, uint16_t *cipher_vec_data,
+                 string_t *value_vec_data, uint64_t size, T *result_data,
+                 VCryptFunctionLocalState &lstate,
+                 shared_ptr<EncryptionState> &encryption_state, const string &key,
+                     bool same_nonce) {
+
+  // assign the right parts of the nonce and counter to iv
+  lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[0] >> 32);
+  lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[0] & 0xFFFFFFFF);
+  lstate.iv[2] = nonce_lo_data[0];
+
+  // decrypt every value in the vector separately
+    for (uint32_t i = 0; i < size; i++) {
+
+      if (!same_nonce){
+        // assign the right parts of the nonce and counter to iv
+        lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[i] >> 32);
+        lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[i] & 0xFFFFFFFF);
+        lstate.iv[2] = nonce_lo_data[i];
+      }
+
+      DecryptSingleValue<T>(counter_vec_data[i],
+                              cipher_vec_data[i], value_vec_data[i], result_data,
+                              lstate, key);
+    }
 }
 
 
@@ -275,20 +304,24 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
 
   auto to_process_total = size;
 
-  if (!CheckNonce(*nonce_hi, *nonce_lo, size)) {
-    // nonce is not sequential, go to per value implementation
-    throw NotImplementedException("Non-sequential nonce not yet supported");
-  }
-
   auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
   auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
+
+  bool same_nonce = true;
+  if (!CheckNonce(*nonce_hi, *nonce_lo, size)) {
+    // nonce is not sequential, go to per value implementation (for now)
+    same_nonce = false;
+    DecryptPerValue<T>(nonce_hi_data, nonce_lo_data, counter_vec_data, cipher_vec_data,
+                       value_vec_data, size, result_data, lstate, lstate.encryption_state, *key, same_nonce);
+    return;
+  }
 
   // assign the right parts of the nonce and counter to iv
   lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[0] >> 32);
   lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[0] & 0xFFFFFFFF);
   lstate.iv[2] = nonce_lo_data[0];
 
-  volatile uint32_t batch_size = 128;
+  uint32_t batch_size = BATCH_SIZE;
   uint32_t batch_size_in_bytes = sizeof(T) * batch_size;
   uint64_t current_batch = 0;
   uint64_t total_batches = (size + batch_size - 1) / batch_size;
@@ -301,9 +334,13 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
           counter_vec_data[current_index + j]) {
         continue;
       }
-      // if not sequential go to other implementation
-      DecryptPerValueBatch<T>(nonce_hi_data, nonce_lo_data, counter_vec_data, cipher_vec_data,
-                      value_vec_data, size, result, lstate, lstate.encryption_state, *key);
+      // if not sequential go to per-value implementation
+      DecryptPerValue<T>(nonce_hi_data, nonce_lo_data, counter_vec_data, cipher_vec_data,
+                         value_vec_data, size, result_data, lstate, lstate.encryption_state, *key, same_nonce);
+      return;
+      // TODO: implement partly-per-batch implementation
+//      DecryptPerValueBatch<T>(nonce_hi_data, nonce_lo_data, counter_vec_data, cipher_vec_data,
+//                      value_vec_data, size, result, lstate, lstate.encryption_state, *key);
     }
 
     current_index += batch_size;
@@ -326,8 +363,8 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
         reinterpret_cast<const string *>(key));
   }
 
-  // decrypt each block independently
-  volatile uint32_t base_idx = 0;
+  // decrypt each block independently (pointers are not always aligned)
+  uint32_t base_idx = 0;
   auto to_process_batch = size;
 
   for (uint32_t batch = 0; batch < total_batches; batch++) {
