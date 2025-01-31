@@ -1,0 +1,11 @@
+CREATE SECRET key_1 (
+	TYPE ENCRYPTION,
+    TOKEN '0123456789112345',
+    LENGTH 16
+);
+CREATE TABLE test_1  AS SELECT range AS value FROM range(12800);
+ALTER TABLE test_1 ADD COLUMN encrypted_values STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, counter UINTEGER, cipher UINTEGER, value BLOB, type TINYINT) DEFAULT (STRUCT_PACK(nonce_hi := 0, nonce_lo := 0, counter := 0, cipher := 0, value := 'BLOB', type := 0));
+UPDATE test_1 SET encrypted_values = encrypt_vectorized(value, 'key_1');
+CREATE TABLE shuffle AS SELECT * FROM test_1 ORDER BY hash(rowid);
+ALTER TABLE shuffle ADD COLUMN decrypted_values BIGINT;
+SELECT decrypt_vectorized(encrypted_values, 'key_1') FROM shuffle;
