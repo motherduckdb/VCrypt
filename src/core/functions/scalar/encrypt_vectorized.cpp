@@ -159,7 +159,6 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
       if (!validity.RowIsValid(lstate.index)) {
         continue;
       }
-
       blob_vec_data[current_index] = encrypted_string;
       cipher_vec_data[current_index] = MaskCipher(i, &plaintext_bytes, false);
       counter_vec_data[current_index] = batch_nr;
@@ -364,10 +363,10 @@ static void EncryptDataVectorized(DataChunk &args, ExpressionState &state,
       return EncryptVectorized<uint32_t>((uint32_t *)vdata_input.data,
                                       size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::BIGINT:
-      return EncryptVectorized<int64_t>((int64_t *)vdata_input.data,
+      return EncryptVectorizedFlat<int64_t>((int64_t *)vdata_input.data,
                                      size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::UBIGINT:
-      return EncryptVectorized<uint64_t>((uint64_t *)vdata_input.data,
+      return EncryptVectorizedFlat<uint64_t>((uint64_t *)vdata_input.data,
                                       size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::FLOAT:
       return EncryptVectorized<float>((float *)vdata_input.data,

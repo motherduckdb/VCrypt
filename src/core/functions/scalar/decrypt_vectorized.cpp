@@ -126,9 +126,9 @@ void DecryptSingleValue(
   // decrypt the value into buffer_p
   lstate.encryption_state->Process(
       reinterpret_cast<const_data_ptr_t>(value.GetData()),
-      lstate.batch_size_in_bytes,
+      BATCH_SIZE * sizeof(T),
       reinterpret_cast<unsigned char *>(lstate.buffer_p),
-      lstate.batch_size_in_bytes);
+      BATCH_SIZE * sizeof(T));
 
     // copy first 64 bits of plaintext to uncipher the cipher
     uint64_t plaintext_bytes;
@@ -142,6 +142,10 @@ void DecryptSingleValue(
     // Load data into result vector
     result_data[lstate.index] = Load<T>(lstate.buffer_p + position * sizeof(T));
 
+#ifdef DEBUG
+    T loaded_val = Load<T>(lstate.buffer_p + position * sizeof(T));
+#endif
+
     // increase index of vector
     lstate.index++;
 }
@@ -154,10 +158,10 @@ void DecryptPerValue(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
                  shared_ptr<EncryptionState> &encryption_state, const string &key,
                      bool same_nonce) {
 
-  // assign the right parts of the nonce and counter to iv
-  lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[0] >> 32);
-  lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[0] & 0xFFFFFFFF);
-  lstate.iv[2] = nonce_lo_data[0];
+//  // assign the right parts of the nonce and counter to iv
+//  lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[0] >> 32);
+//  lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[0] & 0xFFFFFFFF);
+//  lstate.iv[2] = nonce_lo_data[0];
 
   // decrypt every value in the vector separately
     for (uint32_t i = 0; i < size; i++) {
@@ -269,6 +273,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
 
   // local, vcrypt (global) and encryption state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
+  lstate.index = 0;
   auto vcrypt_state = VCryptBasicFun::GetVCryptState(state);
   // auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
   auto key = VCryptBasicFun::GetKey(state);
@@ -334,6 +339,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
           counter_vec_data[current_index + j]) {
         continue;
       }
+
       // if not sequential go to per-value implementation
       DecryptPerValue<T>(nonce_hi_data, nonce_lo_data, counter_vec_data, cipher_vec_data,
                          value_vec_data, size, result_data, lstate, lstate.encryption_state, *key, same_nonce);
