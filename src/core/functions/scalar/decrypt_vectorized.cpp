@@ -113,9 +113,9 @@ void DecryptSingleValue(
                           uint32_t counter_value, uint16_t cipher_value,
                           string_t value, T *result_data,
                           VCryptFunctionLocalState &lstate,
-                          const string &key){
+                          const string &key, uint32_t index){
 
-  // TODO; create caching mechanism in the local state
+  // TODO; create caching mechanism in the local state so that you not have to reencrypt all data
 
   // reset IV and initialize encryption state
   ResetIV<T>(counter_value, lstate);
@@ -130,6 +130,11 @@ void DecryptSingleValue(
       reinterpret_cast<unsigned char *>(lstate.buffer_p),
       BATCH_SIZE * sizeof(T));
 
+  auto *base_ptr = lstate.buffer_p;
+
+  auto first_val = Load<T>(lstate.buffer_p);
+
+#if 0
     // copy first 64 bits of plaintext to uncipher the cipher
     uint64_t plaintext_bytes;
 
@@ -138,16 +143,16 @@ void DecryptSingleValue(
 
     // Get position from cipher
     uint16_t position = UnMaskCipher(cipher_value, &plaintext_bytes);
-
-    // Load data into result vector
-    result_data[lstate.index] = Load<T>(lstate.buffer_p + position * sizeof(T));
-
-#ifdef DEBUG
-    T loaded_val = Load<T>(lstate.buffer_p + position * sizeof(T));
 #endif
 
-    // increase index of vector
-    lstate.index++;
+//    memcpy(&result_data[index], base_ptr + (cipher_value * sizeof(T)), sizeof(T));
+    // Load data into result vector
+    auto offset = cipher_value * sizeof(T);
+    result_data[index] = Load<T>(base_ptr + (cipher_value * sizeof(T)));
+
+#ifdef DEBUG
+    T loaded_val = Load<T>(base_ptr + (cipher_value * sizeof(T)));
+#endif
 }
 
 template <typename T>
@@ -163,6 +168,8 @@ void DecryptPerValue(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
 //  lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[0] & 0xFFFFFFFF);
 //  lstate.iv[2] = nonce_lo_data[0];
 
+// create cache here if counter is similar
+
   // decrypt every value in the vector separately
     for (uint32_t i = 0; i < size; i++) {
 
@@ -173,9 +180,11 @@ void DecryptPerValue(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
         lstate.iv[2] = nonce_lo_data[i];
       }
 
+      auto cipher = cipher_vec_data[i];
+
       DecryptSingleValue<T>(counter_vec_data[i],
                               cipher_vec_data[i], value_vec_data[i], result_data,
-                              lstate, key);
+                              lstate, key, i);
     }
 }
 
@@ -457,7 +466,7 @@ ScalarFunctionSet GetDecryptionVectorizedFunction() {
       {LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                             {"nonce_lo", LogicalType::UBIGINT},
                             {"counter", LogicalType::UINTEGER},
-                            {"cipher", LogicalType::UINTEGER},
+                            {"cipher", LogicalType::USMALLINT},
                             {"value", LogicalType::BLOB},
                             {"type", LogicalType::TINYINT}}),
        LogicalType::VARCHAR}, LogicalType::BIGINT,
