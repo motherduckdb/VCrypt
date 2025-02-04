@@ -48,7 +48,7 @@ LogicalType CreateEncryptionStruct() {
   return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                               {"nonce_lo", LogicalType::UBIGINT},
                               {"counter", LogicalType::UINTEGER},
-                              {"cipher", LogicalType::SMALLINT},
+                              {"cipher", LogicalType::USMALLINT},
                               {"value", LogicalType::BLOB},
                               {"type", LogicalType::TINYINT}});
 }
@@ -392,7 +392,7 @@ ScalarFunctionSet GetEncryptionVectorizedFunction() {
                        LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                                             {"nonce_lo", LogicalType::UBIGINT},
                                             {"counter", LogicalType::UINTEGER},
-                                            {"cipher", LogicalType::SMALLINT},
+                                            {"cipher", LogicalType::USMALLINT},
                                             {"value", LogicalType::BLOB},
                                             {"type", LogicalType::TINYINT}}),
                        EncryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
