@@ -11,8 +11,8 @@ set allow_persistent_secrets=false;
 # Create an internal secret (for internal encryption of columns)
 statement ok
 CREATE SECRET key_1 (
-	TYPE ENCRYPTION,
-    MASTER_KEY '0123456789112345',
+	TYPE VCRYPT,
+    TOKEN '0123456789112345',
     LENGTH 16
 );
 

@@ -107,7 +107,7 @@ static unique_ptr<BaseSecret> CreateKeyEncryptionKey(ClientContext &context, Cre
 
 void CoreSecretFunctions::RegisterStoreEncryptSecretFunction(DatabaseInstance &db) {
 
-  string type = "encryption";
+  string type = "vcrypt";
 
   // Register the new secret type
   SecretType secret_type;
