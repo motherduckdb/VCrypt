@@ -6,7 +6,7 @@ This repository is based on https://github.com/duckdb/extension-template, check 
 
 VCrypt, short for _Vectorized Cryptography_, allows to efficiently encrypt and decrypt values within DuckDB. It is leveraging DuckDB compression methods to compress away metadata such as nonces, which are used to randomize the encryption. Because of its design, VCrypt often uses _vectorized processing_ to encrypt and decrypt values in batch.
 
-NB: this extension is under development and not stable yet
+NB: this extension is highly experimental and should not be used in production.
 
 ## Usage
 
@@ -16,27 +16,41 @@ Create a DuckDB secret;
 
 ```
 CREATE SECRET key_name (
-    TYPE ENCRYPTION,
+    TYPE VCRYPT,
     TOKEN 'secret_key'
     LENGTH 16);
 ```
 
-Supported key lenghts are 16, 24 and 32 bytes.
+Supported key lenghts are 16, 24 and 32 bytes. In future versions, we are aiming for compatibility with a Key Management System. In addition, we are working on single- and double key-wrapping and rotating for better security.
 
 ### Encrypting and Decrypting
 
-Then Encrypt or Decrypt with:
+For Vectorized Encryption (batch encryption/decryption), Encrypt or Decrypt with:
 
 ```
 encrypt(value, 'key_name')
 decrypt(value, 'key_name')
 ```
 
-Message is (for now) used as a 'salt', to generate a new encryption key per value or per column that is encrypted. In future versions, we are implementing another mechanism to automatically generate columnar keys.
+For _per-value_ encryption, or to encrypt values that are most certainly _not_ accessed together, we recommend to use
+
+```
+encrypt_naive(value, 'key_name')
+decrypt_naive(value, 'key_name')
+```
+
+Note that this approach will be significantly slower if multiple values are being [en/de]crypted, and the storage overhead increases due to a seperate number only used once (nonce) generated for every value (which will be resolved in future versions).
 
 ### Notes
 
-We are now only supporting MBEDTLS/OPENSSL `AES-CTR`, but are working on supporting more encryption algorithms later.
+We are now only supporting MBEDTLS/OPENSSL `AES-CTR`, but are working on supporting multiple ciphers. We aim to support at least:
+
+- `AES-GCM` (authenticated, randomized)
+- `AES-OCB` (authenticated, randomized)
+- `AES-ECB`
+- `AES-CBC`
+- `AES-CFB`
+- `AES-OFB`
 
 ## Building
 ### Managing dependencies
