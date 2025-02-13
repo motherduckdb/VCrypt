@@ -459,7 +459,7 @@ static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
 }
 
 ScalarFunctionSet GetDecryptionVectorizedFunction() {
-  ScalarFunctionSet set("decrypt_vectorized");
+  ScalarFunctionSet set("decrypt");
 
   // todo fix the right return type
   set.AddFunction(ScalarFunction(

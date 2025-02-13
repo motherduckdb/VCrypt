@@ -26,6 +26,7 @@ set(EXTENSION_SOURCES
     src/core/module.cpp
     src/core/types.cpp
     src/core/functions/scalar/encrypt.cpp
+    src/core/functions/scalar/key_gen.cpp
     src/core/functions/scalar/encrypt_naive.cpp
     src/core/functions/scalar/encrypt_vectorized.cpp
     src/core/functions/scalar/decrypt_vectorized.cpp

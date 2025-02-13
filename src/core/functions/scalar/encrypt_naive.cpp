@@ -381,7 +381,7 @@ static void DecryptDataFromEtype(DataChunk &args, ExpressionState &state,
 }
 
 ScalarFunctionSet GetEncryptionStructFunction() {
-  ScalarFunctionSet set("encrypt");
+  ScalarFunctionSet set("encrypt_naive");
 
   for (auto &type : LogicalType::AllTypes()) {
     set.AddFunction(
@@ -396,7 +396,7 @@ ScalarFunctionSet GetEncryptionStructFunction() {
 }
 
 ScalarFunctionSet GetDecryptionStructFunction() {
-  ScalarFunctionSet set("decrypt");
+  ScalarFunctionSet set("decrypt_naive");
 
   for (auto &type : LogicalType::AllTypes()) {
     for (auto &nonce_type_a : LogicalType::Numeric()) {

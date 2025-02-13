@@ -1,0 +1,20 @@
+# name: test/sql/secrets/simple_secrets_test.test
+# description: Test secret creation for internal encryption
+# group: [simple-encryption/secrets]
+
+#statement ok
+#PRAGMA enable_verification;
+
+require simple_encryption
+
+# Generate Keys
+statement ok
+SELECT generate_key(16) as result;
+
+statement error
+SELECT generate_key(99) as result;
+----
+Invalid key length. Only 16, 24 or 32 bytes are supported.
+
+statement ok
+SELECT generate_key(24) as result;
