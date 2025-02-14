@@ -338,13 +338,15 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
 template <typename T>
 void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &state, Vector &result, uint8_t vector_type) {
 
+  // we also need to store the total size of the encrypted blob...
+  // maybe for strings its really impossible..
+  // just do the first 64 bits for sz
+
   // local and global vcrypt state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
   auto vcrypt_state =
       VCryptBasicFun::GetVCryptState(state);
 
-  // auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
-  // todo; fix key
   auto key = VCryptBasicFun::GetKey(state);
   auto &validity = FlatVector::Validity(result);
 
@@ -355,31 +357,36 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
   auto &nonce_hi = children[0];
   auto &nonce_lo = children[1];
   auto &counter_vec = children[2];
-  auto &cipher_vec = children[3];
-  auto &type_vec = children[5];
+  auto &length_vec = children[3];
+  auto &offset_vec = children[4];
+  auto &type_vec = children[6];
 
   nonce_hi->SetVectorType(VectorType::CONSTANT_VECTOR);
   nonce_lo->SetVectorType(VectorType::CONSTANT_VECTOR);
   counter_vec->SetVectorType(VectorType::FLAT_VECTOR);
-  cipher_vec->SetVectorType(VectorType::FLAT_VECTOR);
+  length_vec->SetVectorType(VectorType::FLAT_VECTOR);
+  offset_vec->SetVectorType(VectorType::FLAT_VECTOR);
   type_vec->SetVectorType(VectorType::CONSTANT_VECTOR);
 
   UnifiedVectorFormat nonce_hi_u;
   UnifiedVectorFormat nonce_lo_u;
   UnifiedVectorFormat counter_vec_u;
-  UnifiedVectorFormat cipher_vec_u;
+  UnifiedVectorFormat length_vec_u;
+  UnifiedVectorFormat offset_vec_u;
   UnifiedVectorFormat type_vec_u;
 
   nonce_hi->ToUnifiedFormat(size, nonce_hi_u);
   nonce_lo->ToUnifiedFormat(size, nonce_lo_u);
   counter_vec->ToUnifiedFormat(size, counter_vec_u);
-  cipher_vec->ToUnifiedFormat(size, cipher_vec_u);
+  length_vec->ToUnifiedFormat(size, length_vec_u);
+  offset_vec->ToUnifiedFormat(size, offset_vec_u);
   type_vec->ToUnifiedFormat(size, type_vec_u);
 
   auto nonce_hi_data = FlatVector::GetData<uint64_t>(*nonce_hi);
   auto nonce_lo_data = FlatVector::GetData<uint32_t>(*nonce_lo);
   auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
-  auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
+  auto length_vec_data = FlatVector::GetData<uint32_t>(*length_vec);
+  auto offset_vec_data = FlatVector::GetData<uint64_t>(*offset_vec);
   auto type_vec_data = FlatVector::GetData<int8_t>(*type_vec);
 
   // set type
@@ -390,7 +397,7 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
   nonce_lo_data[0] = lstate.iv[2];
 
   // result vector is a dict vector containing encrypted data
-  auto &blob = children[4];
+  auto &blob = children[5];
   SelectionVector sel(size);
   blob->Slice(*blob, sel, size);
 
@@ -400,7 +407,6 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
   auto &blob_child = DictionaryVector::Child(*blob);
   auto blob_child_data = FlatVector::GetData<string_t>(blob_child);
 
-  // todo: FIX! check if aligned with 16 bytes
   if (lstate.batch_nr == 0) {
     lstate.encryption_state->InitializeEncryption(
         reinterpret_cast<const_data_ptr_t>(lstate.iv), 16, key);
@@ -454,7 +460,8 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
       // cipher contains the (masked) position in the block
       // to calculate the offset: plain_cipher * sizeof(T)
       // todo; fix the is_null
-      cipher_vec_data[index] = MaskCipher(j, &plaintext_bytes, false);
+//      length_vec_data[index] = ;
+//      offset_vec_data[index] = current_offset + length;
       // counter is used to identify the delta of the nonce
       counter_vec_data[index] = batch_nr + lstate.batch_nr;
       index++;
@@ -545,7 +552,8 @@ ScalarFunctionSet GetEncryptionVectorizedFunction() {
                        LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                                             {"nonce_lo", LogicalType::UBIGINT},
                                             {"counter", LogicalType::UINTEGER},
-                                            {"cipher", LogicalType::USMALLINT},
+                                            {"length", LogicalType::UINTEGER},
+                                            {"offset", LogicalType::UBIGINT},
                                             {"value", LogicalType::BLOB},
                                             {"type", LogicalType::TINYINT}}),
                        EncryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));

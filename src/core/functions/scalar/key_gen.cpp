@@ -51,11 +51,9 @@ void GenerateRandomNumbers(uint32_t blocks, uint32_t *key_numeric) {
 
 static void GenerateRandomKey(DataChunk &args, ExpressionState &state,
                                   Vector &result) {
-
-  uint32_t length;
   auto &vector = args.data[0];
-
-  // allocate maximum size on the stack for every vector
+  // allocate maximum size on the stack for value
+  uint32_t length;
   uint32_t key_numeric[8];
 
   UnaryExecutor::Execute<uint32_t, string_t>(vector, result, args.size(), [&](uint32_t input) -> string_t {
