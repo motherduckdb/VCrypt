@@ -1,6 +1,6 @@
-# name: test/sql/secrets/simple_secrets_test.test
-# description: Test secret creation for internal encryption
-# group: [simple-encryption/secrets]
+# name: test/sql/generate_key.test
+# description: Test key generation for VCrypt
+# group: [simple-encryption]
 
 #statement ok
 #PRAGMA enable_verification;

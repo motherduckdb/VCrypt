@@ -1,0 +1,10 @@
+# name: test/sql/generate_key_batch.test
+# description: Test key generation for VCrypt
+# group: [simple-encryption]
+# todo...
+
+#statement ok
+#PRAGMA enable_verification;
+
+require simple_encryption
+
