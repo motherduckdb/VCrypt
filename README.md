@@ -6,7 +6,7 @@ This repository is based on https://github.com/duckdb/extension-template, check 
 
 VCrypt, short for _Vectorized Cryptography_, allows to efficiently encrypt and decrypt values within DuckDB. It is leveraging DuckDB compression methods to compress away metadata such as nonces, which are used to randomize the encryption. Because of its design, VCrypt often uses _vectorized processing_ to encrypt and decrypt values in batch.
 
-NB: this extension is highly experimental and should not be used in production.
+NB: this extension is highly experimental and might not work correctly yet.
 
 ## Usage
 
@@ -22,6 +22,13 @@ CREATE SECRET key_name (
 ```
 
 Supported key lenghts are 16, 24 and 32 bytes. In future versions, we are aiming for compatibility with a Key Management System. In addition, we are working on single- and double key-wrapping and rotating for better security.
+To generate an encryption key, you can also use the `generate_key()` scalar function. Key lengths of 16, 24 and 32 bytes are supported. For example
+
+```
+SELECT generate_key(16) as key;
+```
+
+will produce a 16-byte base64 encoded key.
 
 ### Encrypting and Decrypting
 
