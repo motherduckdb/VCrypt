@@ -335,12 +335,22 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   lstate.batch_nr += batch_nr;
 }
 
+void StoreByteOffsets(){
+
+}
+
 template <typename T>
 void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &state, Vector &result, uint8_t vector_type) {
 
   // we also need to store the total size of the encrypted blob...
   // maybe for strings its really impossible..
   // just do the first 64 bits for sz
+
+  // Storage Layout
+  // ----------------------------------------------------------------------------
+  // 8 bytes VCrypt version
+  // 127 * 32 bytes is byte offset (could be 16 bits)
+  // resulting bytes are total length of the encrypted data
 
   // local and global vcrypt state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
@@ -357,36 +367,31 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
   auto &nonce_hi = children[0];
   auto &nonce_lo = children[1];
   auto &counter_vec = children[2];
-  auto &length_vec = children[3];
-  auto &offset_vec = children[4];
-  auto &type_vec = children[6];
+  auto &cipher_vec = children[3];
+  auto &type_vec = children[5];
 
   nonce_hi->SetVectorType(VectorType::CONSTANT_VECTOR);
   nonce_lo->SetVectorType(VectorType::CONSTANT_VECTOR);
   counter_vec->SetVectorType(VectorType::FLAT_VECTOR);
-  length_vec->SetVectorType(VectorType::FLAT_VECTOR);
-  offset_vec->SetVectorType(VectorType::FLAT_VECTOR);
+  cipher_vec->SetVectorType(VectorType::FLAT_VECTOR);
   type_vec->SetVectorType(VectorType::CONSTANT_VECTOR);
 
   UnifiedVectorFormat nonce_hi_u;
   UnifiedVectorFormat nonce_lo_u;
   UnifiedVectorFormat counter_vec_u;
-  UnifiedVectorFormat length_vec_u;
-  UnifiedVectorFormat offset_vec_u;
+  UnifiedVectorFormat cipher_vec_u;
   UnifiedVectorFormat type_vec_u;
 
   nonce_hi->ToUnifiedFormat(size, nonce_hi_u);
   nonce_lo->ToUnifiedFormat(size, nonce_lo_u);
   counter_vec->ToUnifiedFormat(size, counter_vec_u);
-  length_vec->ToUnifiedFormat(size, length_vec_u);
-  offset_vec->ToUnifiedFormat(size, offset_vec_u);
+  cipher_vec->ToUnifiedFormat(size, cipher_vec_u);
   type_vec->ToUnifiedFormat(size, type_vec_u);
 
   auto nonce_hi_data = FlatVector::GetData<uint64_t>(*nonce_hi);
   auto nonce_lo_data = FlatVector::GetData<uint32_t>(*nonce_lo);
   auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
-  auto length_vec_data = FlatVector::GetData<uint32_t>(*length_vec);
-  auto offset_vec_data = FlatVector::GetData<uint64_t>(*offset_vec);
+  auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
   auto type_vec_data = FlatVector::GetData<int8_t>(*type_vec);
 
   // set type
@@ -427,16 +432,51 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
   lstate.batch_size_in_bytes = batch_size * sizeof(T);
   uint64_t plaintext_bytes;
 
+  // TODO; resizeing encryption buffer if type is string
+
   lstate.encryption_state->Process(
       reinterpret_cast<const unsigned char *>(input_vector), total_size,
       lstate.buffer_p, total_size);
 
   auto index = 0;
   auto batch_nr = 0;
-  uint64_t buffer_offset;
+  auto batches = lstate.to_process_batch / batch_size;
+
+  // do we then loop two times?
+
+  for (uint32_t i = 0; i < batches; i++){
+    auto cipher = 0;
+    auto buffer_offset = lstate.buffer_p;
+    auto value_offset = lstate.buffer_p + 1 + (128 * sizeof(uint64_t));
+    // first byte is the version number
+    Store<uint8_t>(*buffer_offset, 0);
+    buffer_offset++;
+
+    for (uint32_t j = 0; j < batch_size; j++) {
+      // we can assume that all values are valid?
+      if (!validity.RowIsValid(index)) {
+        continue;
+      }
+
+      // copy the size of each batch
+      auto value_size = input_vector[index].GetSize();
+      Store<uint64_t>(buffer_offset, value_size);
+      Store<string_t>(value_offset, input_vector[index].GetDataWriteable(), value_size);
+      cipher_vec_data[index] = cipher;
+      cipher++;
+  }
+
+  // then, after 128 values, copy the whole fleet to the blob and assign dictionary vector
+
+  // todo; how to process the last batch if its smaller then 128?
+  // padding!
+
+  // in general, the amount of bytes processed are padded to a multiple of 16
+  // so, we need to store all 128 offsets and also the last one, to know where the last batch ends
+  // or is we just zero out the last string (pad with spaces)
+  // just put 128 values...
 
   while (lstate.to_process_batch) {
-    buffer_offset = batch_nr * lstate.batch_size_in_bytes;
 
     // copy the first 64 bits of plaintext of each batch
     // TODO: fix for edge case; resulting bytes are less then 64 bits (=8 bytes)
@@ -460,9 +500,10 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
       // cipher contains the (masked) position in the block
       // to calculate the offset: plain_cipher * sizeof(T)
       // todo; fix the is_null
-//      length_vec_data[index] = ;
-//      offset_vec_data[index] = current_offset + length;
+      cipher_vec_data[index] = buffer_offset;
       // counter is used to identify the delta of the nonce
+      // counter here is also the amount of bytes that are processed divided by 16
+      // but this is calculated at once
       counter_vec_data[index] = batch_nr + lstate.batch_nr;
       index++;
     }
@@ -527,7 +568,11 @@ static void EncryptDataVectorized(DataChunk &args, ExpressionState &state,
       return EncryptVectorized<double>((double *)vdata_input.data,
                                     size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::VARCHAR:
-    return EncryptVectorized<string_t>((string_t *)vdata_input.data,
+    case LogicalTypeId::VARINT:
+    case LogicalTypeId::BLOB:
+    case LogicalTypeId::MAP:
+    case LogicalTypeId::LIST:
+    return EncryptVectorizedVariable<string_t>((string_t *)vdata_input.data,
                                     size, state, result, uint8_t(vector_type_id));
     default:
       throw NotImplementedException("Unsupported numeric type for encryption");
@@ -552,22 +597,20 @@ ScalarFunctionSet GetEncryptionVectorizedFunction() {
                        LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                                             {"nonce_lo", LogicalType::UBIGINT},
                                             {"counter", LogicalType::UINTEGER},
-                                            {"length", LogicalType::UINTEGER},
-                                            {"offset", LogicalType::UBIGINT},
+                                            {"cipher", LogicalType::USMALLINT},
                                             {"value", LogicalType::BLOB},
                                             {"type", LogicalType::TINYINT}}),
                        EncryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
   }
 
-  // for non-numeric types, we need to capture the length and offset
+  // for non-numeric types, we actually have the same struct
   for (auto &type : IsVariable()) {
     set.AddFunction(
         ScalarFunction({type, LogicalType::VARCHAR},
                        LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                                             {"nonce_lo", LogicalType::UBIGINT},
                                             {"counter", LogicalType::UINTEGER},
-                                            {"length", LogicalType::UINTEGER},
-                                            {"offset", LogicalType::UBIGINT},
+                                            {"cipher", LogicalType::USMALLINT},
                                             {"value", LogicalType::BLOB},
                                             {"type", LogicalType::TINYINT}}),
                        EncryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));

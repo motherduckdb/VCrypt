@@ -51,6 +51,7 @@ void GenerateRandomNumbers(uint32_t blocks, uint32_t *key_numeric) {
 
 static void GenerateRandomKey(DataChunk &args, ExpressionState &state,
                                   Vector &result) {
+
   auto &vector = args.data[0];
   // allocate maximum size on the stack for value
   uint32_t length;
