@@ -2,6 +2,8 @@
 #include "simple_encryption/common.hpp"
 #include "simple_encryption/core/functions/function_data/encrypt_function_data.hpp"
 
+#define BATCH_SIZE 128
+
 namespace simple_encryption {
 
 namespace core {
@@ -17,9 +19,11 @@ public:
   uint32_t batch_nr = 0;
   uint32_t to_process_batch;
   uint64_t batch_size_in_bytes;
+  uint32_t max_buffer_size;
   shared_ptr<EncryptionState> encryption_state;
 
   data_ptr_t buffer_p;
+
 public:
   explicit VCryptFunctionLocalState(ClientContext &context, EncryptFunctionData *bind_data);
   static unique_ptr<FunctionLocalState> Init(ExpressionState &state, const BoundFunctionExpression &expr,

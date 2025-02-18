@@ -335,8 +335,12 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   lstate.batch_nr += batch_nr;
 }
 
-void StoreByteOffsets(){
+void ResizeEncryptionBuffer(VCryptFunctionLocalState &lstate){
 
+}
+
+uint32_t RoundUpToBlockSize(uint32_t num) {
+  return (num + 15) & ~15;
 }
 
 template <typename T>
@@ -354,8 +358,7 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
 
   // local and global vcrypt state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
-  auto vcrypt_state =
-      VCryptBasicFun::GetVCryptState(state);
+  auto vcrypt_state = VCryptBasicFun::GetVCryptState(state);
 
   auto key = VCryptBasicFun::GetKey(state);
   auto &validity = FlatVector::Validity(result);
@@ -417,115 +420,71 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
         reinterpret_cast<const_data_ptr_t>(lstate.iv), 16, key);
   }
 
-  auto batch_size = BATCH_SIZE;
-
-  // todo; create separate function for strings
-  lstate.to_process_batch = size;
-  auto total_size = sizeof(T) * size;
-
-  if (lstate.to_process_batch > BATCH_SIZE) {
-    batch_size = BATCH_SIZE;
-  } else {
-    batch_size = lstate.to_process_batch;
-  }
-
-  lstate.batch_size_in_bytes = batch_size * sizeof(T);
-  uint64_t plaintext_bytes;
-
-  // TODO; resizeing encryption buffer if type is string
-
-  lstate.encryption_state->Process(
-      reinterpret_cast<const unsigned char *>(input_vector), total_size,
-      lstate.buffer_p, total_size);
+  // Initialize Encryption
+  lstate.encryption_state->InitializeEncryption(
+      reinterpret_cast<const_data_ptr_t>(lstate.iv), 16, key);
 
   auto index = 0;
-  auto batch_nr = 0;
-  auto batches = lstate.to_process_batch / batch_size;
+  auto batches = lstate.to_process_batch / BATCH_SIZE;
+  auto metadata_len = 128 * sizeof(uint32_t) + 1;
 
   // do we then loop two times?
+  for (uint32_t i = 0; i < batches; i++) {
+    auto metadata_ptr = lstate.buffer_p;
+    auto buffer_ptr = lstate.buffer_p + metadata_len;
 
-  for (uint32_t i = 0; i < batches; i++){
-    auto cipher = 0;
-    auto buffer_offset = lstate.buffer_p;
-    auto value_offset = lstate.buffer_p + 1 + (128 * sizeof(uint64_t));
-    // first byte is the version number
-    Store<uint8_t>(*buffer_offset, 0);
-    buffer_offset++;
+    // first byte of a batch is the VCrypt version
+    Store<uint8_t>(0, metadata_ptr);
+    metadata_ptr++;
+    auto current_buf_sz = metadata_len;
+    uint64_t val_size;
 
-    for (uint32_t j = 0; j < batch_size; j++) {
-      // we can assume that all values are valid?
-      if (!validity.RowIsValid(index)) {
-        continue;
+    for (uint32_t j = 0; j < BATCH_SIZE; j++) {
+      val_size = input_vector[index].GetSize();
+      // store offset
+      Store<uint32_t>(val_size, metadata_ptr);
+      // store string value in buffer
+      memcpy(buffer_ptr, input_vector[index].GetDataWriteable(), val_size);
+      metadata_ptr += sizeof(uint32_t);
+      buffer_ptr += val_size;
+      current_buf_sz += val_size;
+      index++;
+
+      if (current_buf_sz > lstate.max_buffer_size) {
+        // TODO; resize buffer
+        throw NotImplementedException(
+            "Buffer too small; resizing buffer is not implemented yet");
       }
 
-      // copy the size of each batch
-      auto value_size = input_vector[index].GetSize();
-      Store<uint64_t>(buffer_offset, value_size);
-      Store<string_t>(value_offset, input_vector[index].GetDataWriteable(), value_size);
-      cipher_vec_data[index] = cipher;
-      cipher++;
-  }
+      // do not encrypt the cipher
+      cipher_vec_data[index] = j;
+    }
 
-  // then, after 128 values, copy the whole fleet to the blob and assign dictionary vector
+    blob_child_data[i] = StringVector::EmptyString(blob_child, current_buf_sz);
 
-  // todo; how to process the last batch if its smaller then 128?
-  // padding!
+    // We directly encrypt into the string buffer
+    lstate.encryption_state->Process(
+        lstate.buffer_p, current_buf_sz,
+        reinterpret_cast<data_ptr_t>(blob_child_data[i].GetDataWriteable()),
+        current_buf_sz);
 
-  // in general, the amount of bytes processed are padded to a multiple of 16
-  // so, we need to store all 128 offsets and also the last one, to know where the last batch ends
-  // or is we just zero out the last string (pad with spaces)
-  // just put 128 values...
-
-  while (lstate.to_process_batch) {
-
-    // copy the first 64 bits of plaintext of each batch
-    // TODO: fix for edge case; resulting bytes are less then 64 bits (=8 bytes)
-    auto processed = batch_nr * BATCH_SIZE;
-    memcpy(&plaintext_bytes, &input_vector[processed], sizeof(uint64_t));
-
-    blob_child_data[batch_nr] =
-        StringVector::EmptyString(blob_child, lstate.batch_size_in_bytes);
-    blob_child_data[batch_nr].SetPointer(
-        reinterpret_cast<char *>(lstate.buffer_p + buffer_offset));
-    blob_child_data[batch_nr].Finalize();
+    blob_child_data[i].Finalize();
 
     // set index in selection vector
-    for (uint32_t j = 0; j < batch_size; j++) {
+    for (uint32_t j = 0; j < BATCH_SIZE; j++) {
       if (!validity.RowIsValid(index)) {
         continue;
       }
 
       // set index of selection vector
-      blob_sel.set_index(index, batch_nr);
-      // cipher contains the (masked) position in the block
-      // to calculate the offset: plain_cipher * sizeof(T)
-      // todo; fix the is_null
-      cipher_vec_data[index] = buffer_offset;
-      // counter is used to identify the delta of the nonce
-      // counter here is also the amount of bytes that are processed divided by 16
-      // but this is calculated at once
-      counter_vec_data[index] = batch_nr + lstate.batch_nr;
+      blob_sel.set_index(index, i);
+      counter_vec_data[index] = i;
       index++;
     }
 
-    batch_nr++;
-
-    // todo: optimize
-    if (lstate.to_process_batch > BATCH_SIZE) {
-      lstate.to_process_batch -= BATCH_SIZE;
-    } else {
-      // processing finalized
-      lstate.to_process_batch = 0;
-      break;
-    }
-
-    if (lstate.to_process_batch < BATCH_SIZE) {
-      batch_size = lstate.to_process_batch;
-      lstate.batch_size_in_bytes = lstate.to_process_batch * sizeof(T);
-    }
+    // TODO; only multiples of 128 (BATCH_SIZE) are supported
+    // FIX padding if different case and compaction maybe?
   }
-
-  lstate.batch_nr += batch_nr;
 }
 
 static void EncryptDataVectorized(DataChunk &args, ExpressionState &state,
