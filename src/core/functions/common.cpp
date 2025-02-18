@@ -28,15 +28,15 @@ VCryptFunctionLocalState::VCryptFunctionLocalState(ClientContext &context, Encry
   // set pointer to encryption primitives (mbedtls or openssl)
   encryption_state = bind_data->encryption_util->CreateEncryptionState();
 
-  // todo; fix this for all other types
-  // todo; now it allocates per vector size, but for var-sized data this is tricky
+  // For variable-sized data we need to be able to resize the buffer
   if (type == LogicalType::VARCHAR) {
-    // allocate buffer for encrypted data
-    data_size = DEFAULT_STANDARD_VECTOR_SIZE;
+    // version byte + offsets (BATCH_SIZE * sizeof(uint32_t) + BATCH_SIZE * 16 bytes (initial string length)
+    data_size = 1 + BATCH_SIZE * sizeof(uint32_t) + sizeof(string_t) * BATCH_SIZE;
   } else {
     data_size = GetTypeIdSize(type.InternalType()) * DEFAULT_STANDARD_VECTOR_SIZE;
   }
 
+  max_buffer_size = data_size;
   buffer_p = (data_ptr_t)arena.Allocate(data_size);
 
   if (bind_data->type.id() == LogicalTypeId::VARCHAR) {
@@ -62,6 +62,8 @@ VCryptFunctionLocalState &VCryptFunctionLocalState::ResetAndGet(ExpressionState 
 }
 
 VCryptFunctionLocalState &VCryptFunctionLocalState::AllocateAndGet(ExpressionState &state, idx_t buffer_size) {
+  // fix this to return a new buffer?
+  // AllocateAligned?
   auto &local_state = ExecuteFunctionState::GetFunctionState(state)->Cast<VCryptFunctionLocalState>();
   local_state.arena.Allocate(buffer_size);
   return local_state;
