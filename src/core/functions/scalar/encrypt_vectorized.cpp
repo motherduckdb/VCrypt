@@ -422,13 +422,18 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
   auto const metadata_len = 128 * sizeof(uint64_t) + 1;
 
   for (uint32_t i = 0; i < batches; i++) {
-    lstate.iv[3] = counter_init;
+    lstate.ResetIV<T>(counter_init);
+
+#ifdef DEBUG
+    auto ctr_val = lstate.iv[3];
+#endif
 
     // Initialize Encryption
     lstate.encryption_state->InitializeEncryption(
         reinterpret_cast<const_data_ptr_t>(lstate.iv), 16, key);
 
     // for now, allocate this on the stack
+    // but put this later into the local state
     uint8_t offset_buffer[metadata_len];
     data_ptr_t offset_buf_ptr = offset_buffer;
 
@@ -447,16 +452,25 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
       index++;
     }
 
+#ifdef DEBUG
+    // check all the offsets
+    data_ptr_t check_offsets = offset_buffer;
+    check_offsets++;
+    for (uint32_t k = 0; k < BATCH_SIZE; k++) {
+      uint64_t offset = Load<uint64_t>(check_offsets);
+      check_offsets += sizeof(uint64_t);
+    }
+#endif
+
     index -= BATCH_SIZE;
 
-    // we encrypt data in-place
     blob_child_data[i] = StringVector::EmptyString(blob_child, current_offset  + 1);
     auto batch_ptr = blob_child_data[i].GetDataWriteable();
     memcpy(batch_ptr, offset_buffer, metadata_len);
     batch_ptr += metadata_len;
 
+    // loop again to store the actual values
     for (uint32_t j = 0; j < BATCH_SIZE; j++) {
-      // store string values in buffer
       val_size = input_vector[index].GetSize();
       memcpy(batch_ptr, input_vector[index].GetDataWriteable(), val_size);
       batch_ptr += val_size;
@@ -466,19 +480,18 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
       index++;
     }
 
-    // we are encrypting in-place
+    // we encrypt data in-place
     lstate.encryption_state->Process(
         reinterpret_cast<data_ptr_t>(blob_child_data[i].GetDataWriteable()), current_offset  + 1,
         reinterpret_cast<data_ptr_t>(blob_child_data[i].GetDataWriteable()),
         current_offset  + 1);
-
     blob_child_data[i].Finalize();
 
-    // round off to the neares block of 16 bytes
+    // round off to the nearest block of 16 bytes
     counter_init += ceil((current_offset  + 1) / 16);
 
     // TODO; only multiples of 128 (BATCH_SIZE) are supported
-    // FIX padding (and later compaction).
+    // TODO; FIX padding and later compaction
   }
 }
 

@@ -1,0 +1,40 @@
+# name: test/sql/vectorized/vectorized_decrypt_strings.test
+# description: Test vectorized encrypt scalar function with random strings
+# group: [simple-encryption/vectorized]
+
+require simple_encryption
+
+# Ensure any currently stored secrets don't interfere with the test
+statement ok
+set allow_persistent_secrets=false;
+
+# Create an internal secret (for internal encryption of columns)
+statement ok
+CREATE SECRET key_2 (
+    TYPE VCRYPT,
+    TOKEN 'ABCDEFGHIJKLMNOP',
+    LENGTH 16
+);
+
+# Create a table with random string values
+statement ok
+CREATE TABLE test_strings AS
+    SELECT
+        SUBSTRING(MD5(RANDOM()::TEXT), 1, 5) AS value
+    FROM
+        range(1024);
+
+statement ok
+ALTER TABLE test_strings ADD COLUMN encrypted_values STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, counter UINTEGER, cipher USMALLINT, value BLOB, type TINYINT);
+
+statement ok
+ALTER TABLE test_strings ADD COLUMN decrypted_values VARCHAR;
+
+statement ok
+UPDATE test_strings SET encrypted_values = encrypt(value, 'key_2');
+
+statement ok
+UPDATE test_strings SET decrypted_values = decrypt(encrypted_values, 'key_2');
+
+statement ok
+SELECT value, decrypted_values FROM test_strings;

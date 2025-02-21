@@ -27,35 +27,6 @@ namespace simple_encryption {
 
 namespace core {
 
-void IncrementIV(uint8_t *iv, uint32_t increment){
-  // based on openssl ctr increment function
-  // https://github.com/openssl/openssl/blob/master/crypto/modes/ctr128.c
-
-  uint32_t n = 16;
-
-  do {
-    --n;
-    increment += iv[n];
-    iv[n] = (uint8_t)increment;
-    increment >>= 8;
-  } while (n && increment);
-
-}
-
-template <typename T>
-void ResetIV(uint32_t counter_val, VCryptFunctionLocalState &lstate) {
-
-  // counter needs to start from 0 before updating it
-  lstate.iv[3] = 0;
-
-  if (counter_val == 0) {
-    return;
-  }
-
-  auto increment = counter_val * (BATCH_SIZE * sizeof(T) / 16);
-  IncrementIV(reinterpret_cast<uint8_t *>(lstate.iv), increment);
-}
-
 uint16_t UnMaskCipher(uint16_t cipher, uint64_t *plaintext_bytes) {
   //  const uint64_t prime = 10251357202697351;
   //  auto const a_plaintext = plaintext_bytes + 1;
@@ -118,7 +89,7 @@ void DecryptSingleValue(
   // TODO; create caching mechanism in the local state so that you not have to reencrypt all data
 
   // reset IV and initialize encryption state
-  ResetIV<T>(counter_value, lstate);
+  lstate.ResetIV<T>(counter_value);
   lstate.encryption_state->InitializeDecryption(
         reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
         reinterpret_cast<const string *>(&key));
@@ -148,10 +119,6 @@ void DecryptSingleValue(
     // Load data into result vector
     auto offset = cipher_value * sizeof(T);
     result_data[index] = Load<T>(base_ptr + (cipher_value * sizeof(T)));
-
-#ifdef DEBUG
-    T loaded_val = Load<T>(base_ptr + (cipher_value * sizeof(T)));
-#endif
 }
 
 template <typename T>
@@ -364,7 +331,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   if (lstate.batch_nr == 0) {
     // TODO; this does not work well yet, need to check if the IV is set correctly
     // what happens: after two vectors the IV counter is probably incorrect?
-    ResetIV<T>(counter_vec_data[0], lstate);
+    lstate.ResetIV<T>(counter_vec_data[0]);
     // initialize encryption state
     lstate.encryption_state->InitializeDecryption(
         reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
@@ -428,7 +395,6 @@ void DecryptDataVariable(Vector &input_vector, uint64_t size,
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
   lstate.index = 0;
   auto vcrypt_state = VCryptBasicFun::GetVCryptState(state);
-  // auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
   auto key = VCryptBasicFun::GetKey(state);
 
   D_ASSERT(input_vector.GetType().id() == LogicalTypeId::STRUCT);
@@ -460,14 +426,13 @@ void DecryptDataVariable(Vector &input_vector, uint64_t size,
   auto nonce_hi_data = FlatVector::GetData<uint64_t>(*nonce_hi);
   auto nonce_lo_data = FlatVector::GetData<uint32_t>(*nonce_lo);
 
-  auto to_process_total = size;
-
   auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
   auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
 
   bool same_nonce = true;
   if (!CheckNonce(*nonce_hi, *nonce_lo, size)) {
     // nonce is not sequential, go to per value implementation (for now)
+    throw NotImplementedException("Per-value implementation not available yet for strings");
     same_nonce = false;
     DecryptPerValue<T>(nonce_hi_data, nonce_lo_data, counter_vec_data,
                        cipher_vec_data, value_vec_data, size, result_data,
@@ -480,10 +445,8 @@ void DecryptDataVariable(Vector &input_vector, uint64_t size,
   lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[0] & 0xFFFFFFFF);
   lstate.iv[2] = nonce_lo_data[0];
 
-  uint32_t batch_size = BATCH_SIZE;
-  uint32_t batch_size_in_bytes = sizeof(T) * batch_size;
   uint64_t current_batch = 0;
-  uint64_t total_batches = (size + batch_size - 1) / batch_size;
+  uint16_t total_batches = ceil(size / BATCH_SIZE);
   idx_t current_index = 0;
 
   while (current_batch < total_batches) {
@@ -493,43 +456,58 @@ void DecryptDataVariable(Vector &input_vector, uint64_t size,
           counter_vec_data[current_index + j]) {
         continue;
       }
-
-      // if not sequential go to per-value implementation
-      // TODO; decrypt per value string
+      throw NotImplementedException("Per-value implementation not available yet for strings");
       DecryptPerValue<T>(nonce_hi_data, nonce_lo_data, counter_vec_data,
                          cipher_vec_data, value_vec_data, size, result_data,
                          lstate, lstate.encryption_state, *key, same_nonce);
       return;
-      // TODO: implement partly-per-batch implementation
-      //      DecryptPerValueBatch<T>(nonce_hi_data, nonce_lo_data, counter_vec_data, cipher_vec_data,
-      //                      value_vec_data, size, result, lstate, lstate.encryption_state, *key);
     }
 
-    current_index += batch_size;
+    current_index += BATCH_SIZE;
     current_batch++;
   }
 
-  if (lstate.batch_nr == 0) {
-    ResetIV<T>(counter_vec_data[0], lstate);
-    // initialize encryption state
+  uint32_t index = 0;
+  for (uint32_t i = 0; i < total_batches; i++) {
+    // for every batch, the IV is reset due to rounding to the nearest 16-byte block
+    lstate.ResetIV<T>(counter_vec_data[index]);
+
+    // for every batch, reset the encryption state
     lstate.encryption_state->InitializeDecryption(
         reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
         reinterpret_cast<const string *>(key));
-  }
 
-  // decrypt each block independently (pointers are not always aligned)
-  uint32_t index = 0;
+    auto batch_size = value_vec_data[index].GetSize();
+    auto metadata_ptr = value_vec_data[index].GetDataWriteable();
+    data_ptr_t buffer_ptr = reinterpret_cast<data_ptr_t const>(value_vec_data[index].GetDataWriteable());
 
-  // create a decryption buffer for on the stack
-  for (uint32_t i = 0; i < total_batches; i++) {
-
+    // we decrypt in place
     lstate.encryption_state->Process(
-        reinterpret_cast<const_data_ptr_t>(value_vec_data[index].GetData()),
-        value_vec_data[index].GetSize(),
-        reinterpret_cast<unsigned char *>(result_data),
-        value_vec_data[index].GetSize());
+        reinterpret_cast<const_data_ptr_t>(value_vec_data[index].GetData()), batch_size,
+        (data_ptr_t)value_vec_data[index].GetData(), batch_size);
 
-    // still fix this
+    // loop through metadata to allocate strings correctly
+    uint8_t vcrypt_version = Load<uint8_t>(reinterpret_cast<const_data_ptr_t>(metadata_ptr));
+
+    metadata_ptr++;
+    // previous offset is metadata length (hardcoded for now)
+    uint64_t prev_offset = 1025;
+    uint64_t current_offset, length;
+
+    for (uint8_t j = 0; j < BATCH_SIZE; j++){
+      current_offset = Load<uint64_t>(reinterpret_cast<const_data_ptr_t>(metadata_ptr));
+      D_ASSERT(current_offset > prev_offset);
+      length = current_offset - prev_offset;
+
+      result_data[index] = StringVector::EmptyString(result, length);
+      memcpy(result_data[index].GetDataWriteable(), buffer_ptr, length);
+      result_data[index].Finalize();
+
+      buffer_ptr += length;
+      prev_offset = current_offset;
+      metadata_ptr += sizeof(uint64_t);
+      index++;
+    }
   }
 }
 
@@ -585,6 +563,16 @@ ScalarFunctionSet GetDecryptionVectorizedFunction() {
   ScalarFunctionSet set("decrypt");
 
   // todo fix the right return type
+//  set.AddFunction(ScalarFunction(
+//      {LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
+//                            {"nonce_lo", LogicalType::UBIGINT},
+//                            {"counter", LogicalType::UINTEGER},
+//                            {"cipher", LogicalType::USMALLINT},
+//                            {"value", LogicalType::BLOB},
+//                            {"type", LogicalType::TINYINT}}),
+//       LogicalType::VARCHAR}, LogicalType::BIGINT,
+//      DecryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
+
   set.AddFunction(ScalarFunction(
       {LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                             {"nonce_lo", LogicalType::UBIGINT},
@@ -592,7 +580,7 @@ ScalarFunctionSet GetDecryptionVectorizedFunction() {
                             {"cipher", LogicalType::USMALLINT},
                             {"value", LogicalType::BLOB},
                             {"type", LogicalType::TINYINT}}),
-       LogicalType::VARCHAR}, LogicalType::BIGINT,
+       LogicalType::VARCHAR}, LogicalType::VARCHAR,
       DecryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
 
   return set;

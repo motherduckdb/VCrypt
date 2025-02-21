@@ -33,14 +33,24 @@ public:
   static VCryptFunctionLocalState &AllocateAndGet(ExpressionState &state, idx_t buffer_size);
   static VCryptFunctionLocalState &ResetKeyAndGet(ExpressionState &state);
   const void IncrementIV(uint32_t increment);
+
+public:
   template <typename T>
-  typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value>::type
-  CalculateOffset(uint32_t counter_val, uint32_t& increment);
-  template <typename T>
-  typename std::enable_if<std::is_same<T, std::string>::value>::type
-  CalculateOffset(uint32_t counter_val, uint32_t& increment);
-  template <typename T>
-  void ResetIV(uint32_t counter_val);
+  inline void ResetIV(uint32_t counter_val) {
+    iv[3] = 0;
+
+    if (counter_val == 0) {
+      return;
+    }
+
+    if (std::is_integral<T>::value || std::is_floating_point<T>::value) {
+      auto increment = counter_val * (BATCH_SIZE * sizeof(T) / 16);
+      IncrementIV(increment);
+    } else {
+      // For non-numeric types (e.g., std::string)
+      IncrementIV(counter_val);
+    }
+  }
 
   ~VCryptFunctionLocalState() {
     // Reset state
