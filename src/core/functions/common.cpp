@@ -31,7 +31,7 @@ VCryptFunctionLocalState::VCryptFunctionLocalState(ClientContext &context, Encry
   // For variable-sized data we need to be able to resize the buffer
   if (type == LogicalType::VARCHAR) {
     // version byte + offsets (BATCH_SIZE * sizeof(uint32_t) + BATCH_SIZE * 16 bytes (initial string length)
-    data_size = 1 + BATCH_SIZE * sizeof(uint32_t) + sizeof(string_t) * BATCH_SIZE;
+    data_size = 1 + BATCH_SIZE * sizeof(uint64_t) + sizeof(string_t) * BATCH_SIZE;
   } else {
     data_size = GetTypeIdSize(type.InternalType()) * DEFAULT_STANDARD_VECTOR_SIZE;
   }
@@ -73,6 +73,50 @@ VCryptFunctionLocalState &VCryptFunctionLocalState::ResetKeyAndGet(ExpressionSta
   auto &local_state = ExecuteFunctionState::GetFunctionState(state)->Cast<VCryptFunctionLocalState>();
   local_state.arena.Reset();
   return local_state;
+}
+
+const void VCryptFunctionLocalState::IncrementIV(uint32_t increment){
+  // based on openssl ctr increment function
+  // https://github.com/openssl/openssl/blob/master/crypto/modes/ctr128.c
+  uint32_t n = 16;
+
+  do {
+    --n;
+    increment += iv[n];
+    iv[n] = (uint8_t)increment;
+    increment >>= 8;
+  } while (n && increment);
+
+}
+
+// Specialization for std::string
+template <typename T>
+typename std::enable_if<std::is_same<T, std::string>::value>::type
+VCryptFunctionLocalState::CalculateOffset(uint32_t counter_val, uint32_t& increment) {
+  IncrementIV(counter_val);
+}
+
+// Overload for non-std::string types (integral & floating-point)
+template <typename T>
+typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value>::type
+VCryptFunctionLocalState::CalculateOffset(uint32_t counter_val, uint32_t& increment) {
+  increment = counter_val * (BATCH_SIZE * sizeof(T) / 16);
+  IncrementIV(increment);
+}
+
+template <typename T>
+void VCryptFunctionLocalState::ResetIV(uint32_t counter_val) {
+  // counter needs to start from 0 before updating it
+  iv[3] = 0;
+
+  if (counter_val == 0) {
+    return;
+  }
+
+  uint32_t increment;
+
+  CalculateOffset<T>(counter_val);
+  IncrementIV(increment);
 }
 
 } // namespace core

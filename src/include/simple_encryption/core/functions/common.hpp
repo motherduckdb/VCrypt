@@ -32,6 +32,15 @@ public:
   static VCryptFunctionLocalState &ResetAndGet(ExpressionState &state);
   static VCryptFunctionLocalState &AllocateAndGet(ExpressionState &state, idx_t buffer_size);
   static VCryptFunctionLocalState &ResetKeyAndGet(ExpressionState &state);
+  const void IncrementIV(uint32_t increment);
+  template <typename T>
+  typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value>::type
+  CalculateOffset(uint32_t counter_val, uint32_t& increment);
+  template <typename T>
+  typename std::enable_if<std::is_same<T, std::string>::value>::type
+  CalculateOffset(uint32_t counter_val, uint32_t& increment);
+  template <typename T>
+  void ResetIV(uint32_t counter_val);
 
   ~VCryptFunctionLocalState() {
     // Reset state

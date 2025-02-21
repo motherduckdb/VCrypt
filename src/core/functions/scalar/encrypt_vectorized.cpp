@@ -405,7 +405,7 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
   nonce_lo_data[0] = lstate.iv[2];
 
   // result vector is a dict vector containing encrypted data
-  auto &blob = children[5];
+  auto &blob = children[4];
   SelectionVector sel(size);
   blob->Slice(*blob, sel, size);
 
@@ -415,75 +415,70 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
   auto &blob_child = DictionaryVector::Child(*blob);
   auto blob_child_data = FlatVector::GetData<string_t>(blob_child);
 
-  if (lstate.batch_nr == 0) {
-    lstate.encryption_state->InitializeEncryption(
-        reinterpret_cast<const_data_ptr_t>(lstate.iv), 16, key);
-  }
-
-  // Initialize Encryption
-  lstate.encryption_state->InitializeEncryption(
-      reinterpret_cast<const_data_ptr_t>(lstate.iv), 16, key);
+  auto counter_init = 0;
 
   auto index = 0;
-  auto batches = lstate.to_process_batch / BATCH_SIZE;
-  auto metadata_len = 128 * sizeof(uint32_t) + 1;
+  uint16_t batches = ceil(size / BATCH_SIZE);
+  auto const metadata_len = 128 * sizeof(uint64_t) + 1;
 
-  // do we then loop two times?
   for (uint32_t i = 0; i < batches; i++) {
-    auto metadata_ptr = lstate.buffer_p;
-    auto buffer_ptr = lstate.buffer_p + metadata_len;
+    lstate.iv[3] = counter_init;
+
+    // Initialize Encryption
+    lstate.encryption_state->InitializeEncryption(
+        reinterpret_cast<const_data_ptr_t>(lstate.iv), 16, key);
+
+    // for now, allocate this on the stack
+    uint8_t offset_buffer[metadata_len];
+    data_ptr_t offset_buf_ptr = offset_buffer;
 
     // first byte of a batch is the VCrypt version
-    Store<uint8_t>(0, metadata_ptr);
-    metadata_ptr++;
-    auto current_buf_sz = metadata_len;
+    Store<uint8_t>(0, offset_buf_ptr);
+    offset_buf_ptr++;
+    auto current_offset = metadata_len;
     uint64_t val_size;
 
+    // loop through the batch to see if we have to reallocate the buffer
     for (uint32_t j = 0; j < BATCH_SIZE; j++) {
       val_size = input_vector[index].GetSize();
-      // store offset
-      Store<uint32_t>(val_size, metadata_ptr);
-      // store string value in buffer
-      memcpy(buffer_ptr, input_vector[index].GetDataWriteable(), val_size);
-      metadata_ptr += sizeof(uint32_t);
-      buffer_ptr += val_size;
-      current_buf_sz += val_size;
+      current_offset += val_size;
+      Store<uint64_t>(current_offset, offset_buf_ptr);
+      offset_buf_ptr += sizeof(uint64_t);
       index++;
-
-      if (current_buf_sz > lstate.max_buffer_size) {
-        // TODO; resize buffer
-        throw NotImplementedException(
-            "Buffer too small; resizing buffer is not implemented yet");
-      }
-
-      // do not encrypt the cipher
-      cipher_vec_data[index] = j;
     }
 
-    blob_child_data[i] = StringVector::EmptyString(blob_child, current_buf_sz);
+    index -= BATCH_SIZE;
 
-    // We directly encrypt into the string buffer
+    // we encrypt data in-place
+    blob_child_data[i] = StringVector::EmptyString(blob_child, current_offset  + 1);
+    auto batch_ptr = blob_child_data[i].GetDataWriteable();
+    memcpy(batch_ptr, offset_buffer, metadata_len);
+    batch_ptr += metadata_len;
+
+    for (uint32_t j = 0; j < BATCH_SIZE; j++) {
+      // store string values in buffer
+      val_size = input_vector[index].GetSize();
+      memcpy(batch_ptr, input_vector[index].GetDataWriteable(), val_size);
+      batch_ptr += val_size;
+      blob_sel.set_index(index, i);
+      cipher_vec_data[index] = j;
+      counter_vec_data[index] = counter_init;
+      index++;
+    }
+
+    // we are encrypting in-place
     lstate.encryption_state->Process(
-        lstate.buffer_p, current_buf_sz,
+        reinterpret_cast<data_ptr_t>(blob_child_data[i].GetDataWriteable()), current_offset  + 1,
         reinterpret_cast<data_ptr_t>(blob_child_data[i].GetDataWriteable()),
-        current_buf_sz);
+        current_offset  + 1);
 
     blob_child_data[i].Finalize();
 
-    // set index in selection vector
-    for (uint32_t j = 0; j < BATCH_SIZE; j++) {
-      if (!validity.RowIsValid(index)) {
-        continue;
-      }
-
-      // set index of selection vector
-      blob_sel.set_index(index, i);
-      counter_vec_data[index] = i;
-      index++;
-    }
+    // round off to the neares block of 16 bytes
+    counter_init += ceil((current_offset  + 1) / 16);
 
     // TODO; only multiples of 128 (BATCH_SIZE) are supported
-    // FIX padding if different case and compaction maybe?
+    // FIX padding (and later compaction).
   }
 }
 

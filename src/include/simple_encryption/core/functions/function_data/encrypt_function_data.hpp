@@ -42,8 +42,8 @@ struct EncryptFunctionData : FunctionData {
   unique_ptr<FunctionData> Copy() const override;
   bool Equals(const FunctionData &other_p) const override;
   string GetKeyFromSecret(ClientContext &context, string key_name);
+  void CalculateOffset(uint32_t counter_val, uint32_t& increment);
 };
 
 } // namespace core
-
 } // namespace simple_encryption
