@@ -25,7 +25,7 @@ statement ok
 ALTER TABLE test_1 ADD COLUMN encrypted_values STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, counter UINTEGER, cipher USMALLINT, value BLOB, type TINYINT) DEFAULT (STRUCT_PACK(nonce_hi := 0, nonce_lo := 0, counter := 0, cipher := 0, value := 'BLOB', type := 0));
 
 statement ok
-UPDATE test_1 SET encrypted_values = encrypt_vectorized(value, 'key_1');
+UPDATE test_1 SET encrypted_values = encrypt(value, 'key_1');
 
 statement ok
 CREATE TABLE shuffle AS SELECT * FROM test_1 ORDER BY hash(rowid);
@@ -34,4 +34,4 @@ statement ok
 ALTER TABLE shuffle ADD COLUMN decrypted_values BIGINT;
 
 statement ok
-SELECT decrypt_vectorized(encrypted_values, 'key_1') FROM shuffle;
+SELECT decrypt(encrypted_values, 'key_1') FROM shuffle;

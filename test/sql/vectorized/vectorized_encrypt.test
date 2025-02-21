@@ -21,9 +21,9 @@ statement ok
 CREATE TABLE test_1 AS SELECT row_number() OVER () AS value FROM range(1000);
 
 statement ok
-ALTER TABLE test_1 ADD COLUMN encrypted_values STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, counter UINTEGER, cipher UINTEGER, value BLOB);
+ALTER TABLE test_1 ADD COLUMN encrypted_values STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, counter UINTEGER, cipher USMALLINT, value BLOB, type TINYINT);
 
 statement ok
-UPDATE test_1 SET encrypted_values = encrypt_vectorized(value, 'key_1');
+UPDATE test_1 SET encrypted_values = encrypt(value, 'key_1');
 
 
