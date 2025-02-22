@@ -38,3 +38,7 @@ UPDATE test_strings SET decrypted_values = decrypt(encrypted_values, 'key_2');
 
 statement ok
 SELECT value, decrypted_values FROM test_strings;
+
+#statement ok
+#query I
+#SELECT COUNT(*) FROM test_table WHERE value != decrypted_values;

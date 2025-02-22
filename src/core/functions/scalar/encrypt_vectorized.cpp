@@ -353,7 +353,7 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
   // Storage Layout
   // ----------------------------------------------------------------------------
   // 8 bytes VCrypt version
-  // 127 * 32 bytes is byte offset (could be 16 bits)
+  // 128 * 64 bytes is byte offset (could be truncated to 16 bits for small offsets)
   // resulting bytes are total length of the encrypted data
 
   // local and global vcrypt state
