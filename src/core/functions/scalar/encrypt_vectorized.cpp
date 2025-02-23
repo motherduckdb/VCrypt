@@ -303,7 +303,6 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
       if (!validity.RowIsValid(index)) {
         continue;
       }
-
       // set index of selection vector
       blob_sel.set_index(index, batch_nr);
       // cipher contains the (masked) position in the block
@@ -335,10 +334,6 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   lstate.batch_nr += batch_nr;
 }
 
-void ResizeEncryptionBuffer(VCryptFunctionLocalState &lstate){
-
-}
-
 uint32_t RoundUpToBlockSize(uint32_t num) {
   return (num + 15) & ~15;
 }
@@ -353,7 +348,7 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
   // Storage Layout
   // ----------------------------------------------------------------------------
   // 8 bytes VCrypt version
-  // 128 * 64 bytes is byte offset (could be truncated to 16 bits for small offsets)
+  // 128 * 64 bytes is byte offset (could be truncated to 16 bits for small strings)
   // resulting bytes are total length of the encrypted data
 
   // local and global vcrypt state
@@ -452,20 +447,11 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
       index++;
     }
 
-#ifdef DEBUG
-    // check all the offsets
-    data_ptr_t check_offsets = offset_buffer;
-    check_offsets++;
-    for (uint32_t k = 0; k < BATCH_SIZE; k++) {
-      uint64_t offset = Load<uint64_t>(check_offsets);
-      check_offsets += sizeof(uint64_t);
-    }
-#endif
-
     index -= BATCH_SIZE;
 
-    blob_child_data[i] = StringVector::EmptyString(blob_child, current_offset  + 1);
+    blob_child_data[i] = StringVector::EmptyString(blob_child, current_offset);
     auto batch_ptr = blob_child_data[i].GetDataWriteable();
+    // copy the metadata
     memcpy(batch_ptr, offset_buffer, metadata_len);
     batch_ptr += metadata_len;
 
@@ -482,9 +468,9 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
 
     // we encrypt data in-place
     lstate.encryption_state->Process(
-        reinterpret_cast<data_ptr_t>(blob_child_data[i].GetDataWriteable()), current_offset  + 1,
+        reinterpret_cast<data_ptr_t>(blob_child_data[i].GetDataWriteable()), current_offset,
         reinterpret_cast<data_ptr_t>(blob_child_data[i].GetDataWriteable()),
-        current_offset  + 1);
+        current_offset);
     blob_child_data[i].Finalize();
 
     // round off to the nearest block of 16 bytes

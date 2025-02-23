@@ -122,48 +122,6 @@ void DecryptSingleValue(
 }
 
 template <typename T>
-void DecryptSingleValueVariable(
-    uint32_t counter_value, uint16_t cipher_value,
-    string_t value, T *result_data,
-    VCryptFunctionLocalState &lstate,
-    const string &key, uint32_t index, Vector &result){
-
-  // reset IV and initialize encryption state
-  lstate.ResetIV<T>(counter_value);
-  lstate.encryption_state->InitializeDecryption(
-      reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
-      reinterpret_cast<const string *>(&key));
-
-  auto batch_size = value.GetSize();
-  if (batch_size > lstate.max_buffer_size){
-    // resize buffer
-        lstate.arena.Reset();
-        lstate.buffer_p = (data_ptr_t)lstate.arena.Allocate(batch_size);
-        lstate.max_buffer_size = batch_size;
-  }
-
-  // we still decrypt in place
-  // problem; how do we know that its already decrypted!?
-  lstate.encryption_state->Process(
-      reinterpret_cast<const_data_ptr_t>(value.GetData()),
-      batch_size,
-      reinterpret_cast<unsigned char *>(lstate.buffer_p),
-      batch_size);
-
-  auto *base_ptr = lstate.buffer_p;
-  auto vcrypt_version = Load<uint8_t>(lstate.buffer_p);
-
-  // VCrypt type byte + 8 bytes * cipher_value
-  auto prev_offset = Load<uint64_t>(base_ptr + (1 + ((cipher_value - 1) * sizeof(uint64_t))));
-  auto data_offset = Load<uint64_t>(base_ptr + (1 + (cipher_value * sizeof(uint64_t))));
-  auto length = data_offset - prev_offset;
-
-  result_data[index] = StringVector::EmptyString(result, length);
-  memcpy(result_data[index].GetDataWriteable(), base_ptr + data_offset, length);
-  result_data[index].Finalize();
-}
-
-template <typename T>
 void DecryptPerValue(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
                  uint32_t *counter_vec_data, uint16_t *cipher_vec_data,
                  string_t *value_vec_data, uint64_t size, T *result_data,
@@ -195,7 +153,6 @@ void DecryptPerValueVariable(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
                      shared_ptr<EncryptionState> &encryption_state, const string &key,
                      bool same_nonce, Vector &result) {
 
-
   for (uint32_t i = 0; i < size; i++) {
     if (!same_nonce){
       // assign the right parts of the nonce and counter to iv
@@ -204,9 +161,39 @@ void DecryptPerValueVariable(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
       lstate.iv[2] = nonce_lo_data[i];
     }
 
-    DecryptSingleValueVariable<T>(counter_vec_data[i],
-                          cipher_vec_data[i], value_vec_data[i], result_data,
-                          lstate, key, i, result);
+    // reset IV and initialize encryption state
+    lstate.ResetIV<T>(counter_vec_data[i]);
+    lstate.encryption_state->InitializeDecryption(
+        reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
+        reinterpret_cast<const string *>(&key));
+
+    auto batch_size = value_vec_data[i].GetSize();
+    if (batch_size > lstate.max_buffer_size){
+      lstate.arena.Reset();
+      lstate.buffer_p = (data_ptr_t)lstate.arena.Allocate(batch_size);
+      lstate.max_buffer_size = batch_size;
+    }
+
+    // we encrypt into a buffer
+    lstate.encryption_state->Process(
+        reinterpret_cast<const_data_ptr_t>(value_vec_data[i].GetData()),
+        batch_size,
+        reinterpret_cast<unsigned char *>(lstate.buffer_p),
+        batch_size);
+
+    auto base_ptr = lstate.buffer_p;
+    auto vcrypt_version = Load<uint8_t>(lstate.buffer_p);
+    auto cipher = cipher_vec_data[i];
+
+    // VCrypt type byte + 8 bytes * cipher_value
+    auto metadata_len = 1025;
+    auto current_offset = (cipher == 0) ? metadata_len : Load<uint64_t>(base_ptr + 1 + ((cipher - 1) * sizeof(uint64_t)));
+    auto next_offset = Load<uint64_t>(base_ptr + 1 + (cipher * sizeof(uint64_t)));
+    auto length = next_offset - current_offset;
+
+    result_data[i] = StringVector::EmptyString(result, length);
+    memcpy(result_data[i].GetDataWriteable(), base_ptr + current_offset, length);
+    result_data[i].Finalize();
   }
 }
 
@@ -493,13 +480,13 @@ void DecryptDataVariable(Vector &input_vector, uint64_t size,
 
   uint64_t current_batch = 0;
   uint16_t total_batches = ceil(size / BATCH_SIZE);
-  idx_t current_index = 0;
+  idx_t index = 0;
 
   while (current_batch < total_batches) {
     for (idx_t j = 0; j < BATCH_SIZE; j++) {
       // check if the counter is sequential
-      if (counter_vec_data[current_index] ==
-          counter_vec_data[current_index + j]) {
+      if (counter_vec_data[index] ==
+          counter_vec_data[index + j]) {
         continue;
       }
       DecryptPerValueVariable<T>(nonce_hi_data, nonce_lo_data, counter_vec_data,
@@ -507,16 +494,14 @@ void DecryptDataVariable(Vector &input_vector, uint64_t size,
                          lstate, lstate.encryption_state, *key, same_nonce, result);
       return;
     }
-
-    current_index += BATCH_SIZE;
+    index += BATCH_SIZE;
     current_batch++;
   }
 
-  uint32_t index = 0;
+  index = 0;
   for (uint32_t i = 0; i < total_batches; i++) {
     // for every batch, the IV is reset due to rounding to the nearest 16-byte block
     lstate.ResetIV<T>(counter_vec_data[index]);
-
     // for every batch, reset the encryption state
     lstate.encryption_state->InitializeDecryption(
         reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
@@ -559,7 +544,6 @@ void DecryptDataVariable(Vector &input_vector, uint64_t size,
 
 static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
                                   Vector &result) {
-
   auto size = args.size();
   auto &input_vector = args.data[0];
 
