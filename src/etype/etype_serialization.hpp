@@ -1,0 +1,8 @@
+//
+// Created by Lotte Felius on 05/03/2025.
+//
+
+#ifndef DUCKDB_ETYPE_SERIALIZATION_HPP
+#define DUCKDB_ETYPE_SERIALIZATION_HPP
+
+#endif // DUCKDB_ETYPE_SERIALIZATION_HPP

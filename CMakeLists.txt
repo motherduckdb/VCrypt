@@ -23,6 +23,7 @@ set(EXTENSION_SOURCES
     src/simple_encryption_extension.cpp
     src/simple_encryption_extension.cpp
     src/simple_encryption_state.cpp
+    src/etype/etype_serialization.cpp
     src/core/module.cpp
     src/core/types.cpp
     src/core/functions/scalar/encrypt.cpp
