@@ -3,6 +3,7 @@
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 #include "duckdb/parser/parsed_data/create_type_info.hpp"
 #include "simple_encryption/common.hpp"
+#include "duckdb/common/extension_type_info.hpp"
 
 namespace simple_encryption {
 
