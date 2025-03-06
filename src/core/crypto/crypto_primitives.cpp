@@ -132,11 +132,6 @@ size_t AESStateSSL::Process(const_data_ptr_t in, idx_t in_len, data_ptr_t out,
 
   GetCurrentIV(iv_buf, iv_len);
 
-  auto iv0 = iv_buf[0];
-  auto iv1 = iv_buf[1];
-  auto iv2 = iv_buf[2];
-  auto iv3 = iv_buf[3];
-
   switch (mode) {
   case ENCRYPT:
     if (1 != EVP_EncryptUpdate(context, data_ptr_cast(out),
@@ -224,7 +219,7 @@ namespace simple_encryption {
 namespace core {
 
 std::string CalculateHMAC(const std::string &secret, const std::string &message, const uint32_t length) {
-  const EVP_MD *algorithm = EVP_sha256(); // Replace with EVP_sha1(), EVP_md5(), etc., if needed.
+  const EVP_MD *algorithm = EVP_sha256();
   unsigned char key_buffer[32];
 
   // Output buffer and length
@@ -233,8 +228,8 @@ std::string CalculateHMAC(const std::string &secret, const std::string &message,
 
   // Compute the HMAC
   HMAC(algorithm,
-       secret.data(), secret.size(),                // Key
-       reinterpret_cast<const unsigned char*>(message.data()), message.size(), // Message
+       secret.data(), secret.size(),
+       reinterpret_cast<const unsigned char*>(message.data()), message.size(),
        hmacResult, &hmacLength);
 
   // Copy the desired number of bytes
