@@ -13,13 +13,14 @@
 #include <simple_encryption_extension_callback.hpp>
 #include "simple_encryption/core/module.hpp"
 #include "simple_encryption/core/crypto/crypto_primitives.hpp"
+#include "etype/encrypted_type.hpp"
 
 namespace duckdb {
 
 static void LoadInternal(DatabaseInstance &instance) {
-
   // register functions in the core module
   simple_encryption::core::CoreModule::Register(instance);
+  simple_encryption::core::CoreModule::RegisterType(instance);
 
   // Register the SimpleEncryptionState for all connections
   auto &config = DBConfig::GetConfig(instance);
@@ -40,7 +41,8 @@ static void LoadInternal(DatabaseInstance &instance) {
   }
 }
 
-void SimpleEncryptionExtension::Load(DuckDB &db) { LoadInternal(*db.instance); }
+void SimpleEncryptionExtension::Load(DuckDB &db) {
+  LoadInternal(*db.instance); }
 std::string SimpleEncryptionExtension::Name() { return "simple_encryption"; }
 
 std::string SimpleEncryptionExtension::Version() const {

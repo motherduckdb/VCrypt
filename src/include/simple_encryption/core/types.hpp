@@ -1,5 +1,6 @@
 #pragma once
 #include "simple_encryption/common.hpp"
+#include "../etype/encrypted_type.hpp"
 
 namespace simple_encryption {
 
@@ -13,8 +14,13 @@ struct EncryptionTypes {
   static LogicalType E_BIGINT();
   static LogicalType E_UBIGINT();
   static LogicalType E_VARCHAR();
+  static LogicalType ENCRYPTED();
 
   static void Register(DatabaseInstance &db);
+  static LogicalType GetBasicEncryptedType();
+  static LogicalType GetOriginalType(EncryptedType etype);
+  static LogicalType GetEncryptionType(LogicalTypeId ltype);
+//  static EncryptedType GetEncryptedType(LogicalTypeId ltype);
 };
 
 } // namespace core
