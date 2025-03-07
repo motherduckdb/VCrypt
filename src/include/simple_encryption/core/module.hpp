@@ -9,6 +9,7 @@ struct CoreModule {
 
 public:
   static void Register(DatabaseInstance &db);
+  static void RegisterType(DatabaseInstance &db);
 };
 
 } // namespace core

@@ -13,6 +13,8 @@
 #include "duckdb/common/vector_operations/generic_executor.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "mbedtls_wrapper.hpp"
+#include "../etype/encrypted_type.hpp"
+#include "simple_encryption/core/types.hpp"
 
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
@@ -51,6 +53,7 @@ LogicalType CreateEncryptionStruct() {
                               {"cipher", LogicalType::USMALLINT},
                               {"value", LogicalType::BLOB},
                               {"type", LogicalType::TINYINT}});
+//  return EncryptionTypes::GetBasicEncryptedType();
 }
 
 template <typename T>
@@ -203,7 +206,7 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   auto key = VCryptBasicFun::GetKey(state);
   auto &validity = FlatVector::Validity(result);
 
-  Vector struct_vector(CreateEncryptionStruct(), size);
+  Vector struct_vector(EncryptionTypes::GetEncryptionType(LogicalTypeId(vector_type)), size);
   result.ReferenceAndSetType(struct_vector);
 
   auto &children = StructVector::GetEntries(result);
@@ -211,13 +214,13 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   auto &nonce_lo = children[1];
   auto &counter_vec = children[2];
   auto &cipher_vec = children[3];
-  auto &type_vec = children[5];
+//  auto &type_vec = children[5];
 
   nonce_hi->SetVectorType(VectorType::CONSTANT_VECTOR);
   nonce_lo->SetVectorType(VectorType::CONSTANT_VECTOR);
   counter_vec->SetVectorType(VectorType::FLAT_VECTOR);
   cipher_vec->SetVectorType(VectorType::FLAT_VECTOR);
-  type_vec->SetVectorType(VectorType::CONSTANT_VECTOR);
+//  type_vec->SetVectorType(VectorType::CONSTANT_VECTOR);
 
   UnifiedVectorFormat nonce_hi_u;
   UnifiedVectorFormat nonce_lo_u;
@@ -229,16 +232,16 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   nonce_lo->ToUnifiedFormat(size, nonce_lo_u);
   counter_vec->ToUnifiedFormat(size, counter_vec_u);
   cipher_vec->ToUnifiedFormat(size, cipher_vec_u);
-  type_vec->ToUnifiedFormat(size, type_vec_u);
+//  type_vec->ToUnifiedFormat(size, type_vec_u);
 
   auto nonce_hi_data = FlatVector::GetData<uint64_t>(*nonce_hi);
   auto nonce_lo_data = FlatVector::GetData<uint32_t>(*nonce_lo);
   auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
   auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
-  auto type_vec_data = FlatVector::GetData<int8_t>(*type_vec);
+//  auto type_vec_data = FlatVector::GetData<int8_t>(*type_vec);
 
   // set type
-  type_vec_data[0] = vector_type;
+//  type_vec_data[0] = vector_type;
 
   // set nonce
   nonce_hi_data[0] = (static_cast<uint64_t>(lstate.iv[0]) << 32) | lstate.iv[1];
@@ -509,10 +512,10 @@ static void EncryptDataVectorized(DataChunk &args, ExpressionState &state,
       return EncryptVectorized<uint32_t>((uint32_t *)vdata_input.data,
                                       size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::BIGINT:
-      return EncryptVectorizedFlat<int64_t>((int64_t *)vdata_input.data,
+      return EncryptVectorized<int64_t>((int64_t *)vdata_input.data,
                                      size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::UBIGINT:
-      return EncryptVectorizedFlat<uint64_t>((uint64_t *)vdata_input.data,
+      return EncryptVectorized<uint64_t>((uint64_t *)vdata_input.data,
                                       size, state, result, uint8_t(vector_type_id));
     case LogicalTypeId::FLOAT:
       return EncryptVectorized<float>((float *)vdata_input.data,
@@ -541,33 +544,49 @@ vector<LogicalType> IsVariable() {
   return types;
 }
 
+// available types for encryption
+vector<LogicalType> IsAvailable() {
+  vector<LogicalType> types = {
+      LogicalType::VARCHAR,      LogicalType::INTEGER,      LogicalType::UINTEGER,
+      LogicalType::BIGINT,   LogicalType::UBIGINT };
+  return types;
+}
+
 ScalarFunctionSet GetEncryptionVectorizedFunction() {
   ScalarFunctionSet set("encrypt");
 
-  for (auto &type : LogicalType::Numeric()) {
+  // test with the encrypted type
+  for (auto &type : IsAvailable()) {
     set.AddFunction(
         ScalarFunction({type, LogicalType::VARCHAR},
-                       LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-                                            {"nonce_lo", LogicalType::UBIGINT},
-                                            {"counter", LogicalType::UINTEGER},
-                                            {"cipher", LogicalType::USMALLINT},
-                                            {"value", LogicalType::BLOB},
-                                            {"type", LogicalType::TINYINT}}),
+                       EncryptionTypes::GetEncryptionType(type.id()),
                        EncryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
   }
 
-  // for non-numeric types, we actually have the same struct
-  for (auto &type : IsVariable()) {
-    set.AddFunction(
-        ScalarFunction({type, LogicalType::VARCHAR},
-                       LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-                                            {"nonce_lo", LogicalType::UBIGINT},
-                                            {"counter", LogicalType::UINTEGER},
-                                            {"cipher", LogicalType::USMALLINT},
-                                            {"value", LogicalType::BLOB},
-                                            {"type", LogicalType::TINYINT}}),
-                       EncryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
-  }
+//  for (auto &type : LogicalType::Numeric()) {
+//    set.AddFunction(
+//        ScalarFunction({type, LogicalType::VARCHAR},
+//                       LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
+//                                            {"nonce_lo", LogicalType::UBIGINT},
+//                                            {"counter", LogicalType::UINTEGER},
+//                                            {"cipher", LogicalType::USMALLINT},
+//                                            {"value", LogicalType::BLOB},
+//                                            {"type", LogicalType::TINYINT}}),
+//                       EncryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
+//  }
+
+//  // for non-numeric types, we actually have the same struct
+//  for (auto &type : IsVariable()) {
+//    set.AddFunction(
+//        ScalarFunction({type, LogicalType::VARCHAR},
+//                       LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
+//                                            {"nonce_lo", LogicalType::UBIGINT},
+//                                            {"counter", LogicalType::UINTEGER},
+//                                            {"cipher", LogicalType::USMALLINT},
+//                                            {"value", LogicalType::BLOB},
+//                                            {"type", LogicalType::TINYINT}}),
+//                       EncryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
+//  }
   return set;
 }
 
