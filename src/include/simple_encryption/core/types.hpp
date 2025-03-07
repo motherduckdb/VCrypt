@@ -18,9 +18,10 @@ struct EncryptionTypes {
 
   static void Register(DatabaseInstance &db);
   static LogicalType GetBasicEncryptedType();
-  static LogicalType GetOriginalType(EncryptedType etype);
   static LogicalType GetEncryptionType(LogicalTypeId ltype);
-//  static EncryptedType GetEncryptedType(LogicalTypeId ltype);
+  static vector<LogicalType> IsAvailable();
+  static LogicalType GetOriginalType(EncryptedType etype);
+  static EncryptedType GetEncryptedType(LogicalTypeId ltype);
 };
 
 } // namespace core
