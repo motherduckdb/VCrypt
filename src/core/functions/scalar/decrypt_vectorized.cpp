@@ -13,6 +13,8 @@
 #include "duckdb/common/vector_operations/generic_executor.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "mbedtls_wrapper.hpp"
+#include "../etype/encrypted_type.hpp"
+#include "simple_encryption/core/types.hpp"
 
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
@@ -549,12 +551,11 @@ static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
 
   // derive TypeID from the input vector
   auto &children = StructVector::GetEntries(input_vector);
-  auto &type_vec = children[5];
-  UnifiedVectorFormat type_vec_u;
-  type_vec->ToUnifiedFormat(size, type_vec_u);
-  auto type_vec_data = FlatVector::GetData<uint8_t>(*type_vec);
-  uint8_t type_id = static_cast<uint8_t>(type_vec_data[0]);
-  auto vector_type = LogicalTypeId(type_id);
+
+  // TODO; put this in the bind
+  auto input_type = input_vector.GetType();
+  auto &mods = input_type.GetExtensionInfo()->modifiers;
+  auto vector_type = LogicalTypeId(mods[0].value.GetValue<int8_t>());
 
     switch (vector_type) {
     case LogicalTypeId::TINYINT:
@@ -592,6 +593,13 @@ ScalarFunctionSet GetDecryptionVectorizedFunction() {
   ScalarFunctionSet set("decrypt");
 
   // todo fix the right return type
+  for (auto &type : EncryptionTypes::IsAvailable()) {
+    set.AddFunction(ScalarFunction(
+        {EncryptionTypes::GetEncryptionType(type.id()), LogicalType::VARCHAR},
+        type, DecryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr,
+        nullptr, VCryptFunctionLocalState::Init));
+  }
+
 //  set.AddFunction(ScalarFunction(
 //      {LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
 //                            {"nonce_lo", LogicalType::UBIGINT},
@@ -599,18 +607,8 @@ ScalarFunctionSet GetDecryptionVectorizedFunction() {
 //                            {"cipher", LogicalType::USMALLINT},
 //                            {"value", LogicalType::BLOB},
 //                            {"type", LogicalType::TINYINT}}),
-//       LogicalType::VARCHAR}, LogicalType::BIGINT,
+//       LogicalType::VARCHAR}, LogicalType::VARCHAR,
 //      DecryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
-
-  set.AddFunction(ScalarFunction(
-      {LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-                            {"nonce_lo", LogicalType::UBIGINT},
-                            {"counter", LogicalType::UINTEGER},
-                            {"cipher", LogicalType::USMALLINT},
-                            {"value", LogicalType::BLOB},
-                            {"type", LogicalType::TINYINT}}),
-       LogicalType::VARCHAR}, LogicalType::VARCHAR,
-      DecryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
 
   return set;
 }

@@ -10,7 +10,14 @@ namespace simple_encryption {
 
 namespace core {
 
-// for all types in an ENUM
+// available types for encryption
+vector<LogicalType> EncryptionTypes::IsAvailable() {
+  vector<LogicalType> types = {
+      LogicalType::VARCHAR,      LogicalType::INTEGER,      LogicalType::UINTEGER,
+      LogicalType::BIGINT,   LogicalType::UBIGINT };
+  return types;
+}
+
 LogicalType EncryptionTypes::GetBasicEncryptedType() {
   return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                                    {"nonce_lo", LogicalType::UBIGINT},
@@ -19,7 +26,7 @@ LogicalType EncryptionTypes::GetBasicEncryptedType() {
                                    {"value", LogicalType::BLOB}});
 }
 
-static LogicalType GetOriginalType(EncryptedType etype) {
+LogicalType EncryptionTypes::GetOriginalType(EncryptedType etype) {
   // needs an integer type
   switch(etype){
     case EncryptedType::E_INTEGER:
@@ -37,7 +44,7 @@ static LogicalType GetOriginalType(EncryptedType etype) {
   }
 }
 
-static EncryptedType GetEncryptedType(LogicalTypeId ltype) {
+EncryptedType EncryptionTypes::GetEncryptedType(LogicalTypeId ltype) {
   switch (ltype) {
   case LogicalType::INTEGER:
     return EncryptedType::E_INTEGER;
@@ -72,6 +79,9 @@ LogicalType EncryptionTypes::GetEncryptionType(LogicalTypeId ltype) {
 }
 
 // basic encrypted type
+// todo; we can just use one encrypted type, and just emplace the original type in the type modifiers...
+// the encrypted type just then needs an input (the original type)
+// discuss this
 LogicalType EncryptionTypes::ENCRYPTED() {
   auto type = GetBasicEncryptedType();
   type.SetAlias("ENCRYPTED");
@@ -81,30 +91,45 @@ LogicalType EncryptionTypes::ENCRYPTED() {
 LogicalType EncryptionTypes::E_INTEGER() {
   auto type = GetBasicEncryptedType();
   type.SetAlias("E_INTEGER");
+  auto info = make_uniq<ExtensionTypeInfo>();
+  info->modifiers.emplace_back(Value::TINYINT((int8_t)LogicalType::INTEGER));
+  type.SetExtensionInfo(std::move(info));
   return type;
 }
 
 LogicalType EncryptionTypes::E_BIGINT() {
   auto type = GetBasicEncryptedType();
   type.SetAlias("E_BIGINT");
+  auto info = make_uniq<ExtensionTypeInfo>();
+  info->modifiers.emplace_back(Value::TINYINT((int8_t)LogicalType::BIGINT));
+  type.SetExtensionInfo(std::move(info));
   return type;
 }
 
 LogicalType EncryptionTypes::E_UBIGINT() {
   auto type = GetBasicEncryptedType();
   type.SetAlias("E_UBIGINT");
+  auto info = make_uniq<ExtensionTypeInfo>();
+  info->modifiers.emplace_back(Value::TINYINT((int8_t)LogicalType::UBIGINT));
+  type.SetExtensionInfo(std::move(info));
   return type;
 }
 
 LogicalType EncryptionTypes::E_UINTEGER() {
   auto type = GetBasicEncryptedType();
   type.SetAlias("E_UINTEGER");
+  auto info = make_uniq<ExtensionTypeInfo>();
+  info->modifiers.emplace_back(Value::TINYINT((int8_t)LogicalType::UINTEGER));
+  type.SetExtensionInfo(std::move(info));
   return type;
 }
 
 LogicalType EncryptionTypes::E_VARCHAR() {
   auto type = GetBasicEncryptedType();
   type.SetAlias("E_VARCHAR");
+  auto info = make_uniq<ExtensionTypeInfo>();
+  info->modifiers.emplace_back(Value::TINYINT((int8_t)LogicalType::VARCHAR));
+  type.SetExtensionInfo(std::move(info));
   return type;
 }
 
