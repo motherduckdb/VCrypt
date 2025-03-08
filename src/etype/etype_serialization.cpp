@@ -1,4 +1,3 @@
-#include "etype_serialization.hpp"
 #include "encrypted_type.hpp"
 #include "duckdb/common/serializer/serializer.hpp"
 #include "duckdb/common/serializer/deserializer.hpp"
