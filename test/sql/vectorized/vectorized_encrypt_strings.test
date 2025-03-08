@@ -25,7 +25,7 @@ CREATE TABLE test_strings AS
         range(1024);
 
 statement ok
-ALTER TABLE test_strings ADD COLUMN encrypted_values STRUCT(nonce_hi UBIGINT, nonce_lo UBIGINT, counter UINTEGER, cipher USMALLINT, value BLOB, type TINYINT);
+ALTER TABLE test_strings ADD COLUMN encrypted_values E_VARCHAR;
 
 statement ok
 UPDATE test_strings SET encrypted_values = encrypt(value, 'key_2');

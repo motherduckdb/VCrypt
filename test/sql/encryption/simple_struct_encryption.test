@@ -12,12 +12,7 @@ Catalog Error: Scalar Function with name simple_encryption does not exist!
 require simple_encryption
 
 statement ok
-SELECT encrypt(11, '0123456789112345');
-
-query I
-SELECT decrypt({'nonce_hi': 11752579000357969348, 'nonce_lo': 2472254480, 'value': 1288890}, '0123456789112345');
-----
-194072790
+SELECT encrypt_naive(11, '0123456789112345');
 
 statement ok
 CREATE TABLE test_1 AS SELECT 1 AS value FROM range(10);

@@ -549,10 +549,7 @@ static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
   auto size = args.size();
   auto &input_vector = args.data[0];
 
-  // derive TypeID from the input vector
-  auto &children = StructVector::GetEntries(input_vector);
-
-  // TODO; put this in the bind
+  // TODO; put this in the lstate; which gets initialized upon calling a scalar function
   auto input_type = input_vector.GetType();
   auto &mods = input_type.GetExtensionInfo()->modifiers;
   auto vector_type = LogicalTypeId(mods[0].value.GetValue<int8_t>());
@@ -592,23 +589,12 @@ static void DecryptDataVectorized(DataChunk &args, ExpressionState &state,
 ScalarFunctionSet GetDecryptionVectorizedFunction() {
   ScalarFunctionSet set("decrypt");
 
-  // todo fix the right return type
   for (auto &type : EncryptionTypes::IsAvailable()) {
     set.AddFunction(ScalarFunction(
         {EncryptionTypes::GetEncryptionType(type.id()), LogicalType::VARCHAR},
         type, DecryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr,
         nullptr, VCryptFunctionLocalState::Init));
   }
-
-//  set.AddFunction(ScalarFunction(
-//      {LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-//                            {"nonce_lo", LogicalType::UBIGINT},
-//                            {"counter", LogicalType::UINTEGER},
-//                            {"cipher", LogicalType::USMALLINT},
-//                            {"value", LogicalType::BLOB},
-//                            {"type", LogicalType::TINYINT}}),
-//       LogicalType::VARCHAR}, LogicalType::VARCHAR,
-//      DecryptDataVectorized, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
 
   return set;
 }

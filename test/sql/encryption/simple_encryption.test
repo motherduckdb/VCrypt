@@ -13,48 +13,48 @@ require simple_encryption
 
 #INTEGER
 query I
-SELECT encrypt(11, '0123456789112345');
+SELECT encrypt_naive(11, '0123456789112345');
 ----
 1959677685
 
 #INTEGER
 query I
-SELECT decrypt(1959677685, '0123456789112345');
+SELECT decrypt_naive(1959677685, '0123456789112345');
 ----
 11
 
 #BIGINT
 query I
-SELECT encrypt(0123456789112345, '0123456789112345');
+SELECT encrypt_naive(0123456789112345, '0123456789112345');
 ----
 4095259532786215143
 
 #BIGINT
 query I
-SELECT decrypt(4095259532786215143, '0123456789112345');
+SELECT decrypt_naive(4095259532786215143, '0123456789112345');
 ----
 0123456789112345
 
 #VARCHAR
 query I
-SELECT encrypt('testtest', '0123456789112345');
+SELECT encrypt_naive('testtest', '0123456789112345');
 ----
 iiu9AORdpkw=
 
 #VARCHAR
 query I
-SELECT decrypt('iiu9AORdpkw=', '0123456789112345');
+SELECT decrypt_naive('iiu9AORdpkw=', '0123456789112345');
 ----
 testtest
 
 #VARCHAR
 query I
-SELECT encrypt('test', '0123456789112345');
+SELECT encrypt_naive('test', '0123456789112345');
 ----
 iiu9AA==
 
 #VARCHAR
 query I
-SELECT decrypt('iiu9AA==', '0123456789112345');
+SELECT decrypt_naive('iiu9AA==', '0123456789112345');
 ----
 test
