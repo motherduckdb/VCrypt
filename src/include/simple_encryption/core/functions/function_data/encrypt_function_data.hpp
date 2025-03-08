@@ -2,6 +2,7 @@
 
 #include "simple_encryption/common.hpp"
 #include "duckdb/main/client_context.hpp"
+#include "duckdb/common/types.hpp"
 #include "mbedtls_wrapper.hpp"
 
 #define BATCH_SIZE 128
