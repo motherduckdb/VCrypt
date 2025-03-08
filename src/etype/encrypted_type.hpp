@@ -1,7 +1,6 @@
 #pragma once
 
 #include "simple_encryption/util/cursor.hpp"
-#include "etype_properties.hpp"
 
 #include "duckdb/common/types/string_type.hpp"
 #include "duckdb/common/string_util.hpp"

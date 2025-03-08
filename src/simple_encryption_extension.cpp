@@ -1,6 +1,4 @@
 #define DUCKDB_EXTENSION_MAIN
-
-#define TEST_KEY "0123456789112345"
 #define MAX_BUFFER_SIZE 1024
 
 #include "simple_encryption_extension.hpp"

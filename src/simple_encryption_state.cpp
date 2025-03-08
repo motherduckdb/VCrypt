@@ -1,4 +1,3 @@
-#define MAX_BUFFER_SIZE 128
 #include "include/simple_encryption_state.hpp"
 #include "duckdb.hpp"
 #include "mbedtls_wrapper.hpp"

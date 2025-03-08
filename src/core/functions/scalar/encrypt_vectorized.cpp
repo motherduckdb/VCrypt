@@ -459,12 +459,14 @@ static void EncryptDataVectorized(DataChunk &args, ExpressionState &state,
       return EncryptVectorized<int16_t>((int16_t *)vdata_input.data,
                                      size, state, result, uint8_t(vector_type));
     case LogicalTypeId::INTEGER:
+    case LogicalTypeId::DATE:
       return EncryptVectorized<int32_t>((int32_t *)vdata_input.data,
                                      size, state, result, uint8_t(vector_type));
     case LogicalTypeId::UINTEGER:
       return EncryptVectorized<uint32_t>((uint32_t *)vdata_input.data,
                                       size, state, result, uint8_t(vector_type));
     case LogicalTypeId::BIGINT:
+    case LogicalTypeId::TIMESTAMP:
       return EncryptVectorized<int64_t>((int64_t *)vdata_input.data,
                                      size, state, result, uint8_t(vector_type));
     case LogicalTypeId::UBIGINT:

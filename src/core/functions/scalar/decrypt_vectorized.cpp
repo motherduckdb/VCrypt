@@ -1,18 +1,15 @@
 #define DUCKDB_EXTENSION_MAIN
 
-#include "duckdb.hpp"
-#include "duckdb/main/client_context.hpp"
+#include "simple_encryption/core/functions/common.hpp"
 #include "duckdb/main/extension_util.hpp"
 #include "duckdb/main/connection_manager.hpp"
 #include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/exception.hpp"
-#include "duckdb/common/types/blob.hpp"
 #include "duckdb/common/encryption_state.hpp"
 #include "duckdb/common/vector_operations/generic_executor.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
-#include "mbedtls_wrapper.hpp"
 #include "../etype/encrypted_type.hpp"
 #include "simple_encryption/core/types.hpp"
 
@@ -200,6 +197,7 @@ void DecryptPerValueVariable(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
 }
 
 
+#if 0
 template <typename T>
 void DecryptPerValueBatch(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
                      uint32_t *counter_vec_data, uint16_t *cipher_vec_data,
@@ -279,6 +277,7 @@ void DecryptPerValueBatch(uint64_t *nonce_hi_data, uint32_t *nonce_lo_data,
     }
   }
 }
+#endif
 
 template <typename T>
 void DecryptFromEtype(Vector &input_vector, uint64_t size,
