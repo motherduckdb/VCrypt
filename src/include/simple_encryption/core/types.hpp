@@ -14,6 +14,12 @@ struct EncryptionTypes {
   static LogicalType E_BIGINT();
   static LogicalType E_UBIGINT();
   static LogicalType E_VARCHAR();
+  static LogicalType E_DATE();
+  static LogicalType E_TIMESTAMP();
+  static LogicalType E_DECIMAL();
+  static LogicalType E_FLOAT();
+  static LogicalType E_DOUBLE();
+  static LogicalType E_CHAR();
   static LogicalType ENCRYPTED();
 
   static void Register(DatabaseInstance &db);
