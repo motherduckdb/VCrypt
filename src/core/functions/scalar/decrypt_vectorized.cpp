@@ -86,7 +86,6 @@ void DecryptSingleValue(
                           const string &key, uint32_t index){
 
   // TODO; create caching mechanism in the local state so that you not have to reencrypt all data
-
   // reset IV and initialize encryption state
   lstate.ResetIV<T>(counter_value);
   lstate.encryption_state->InitializeDecryption(

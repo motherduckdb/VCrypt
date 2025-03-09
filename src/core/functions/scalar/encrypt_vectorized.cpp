@@ -480,6 +480,7 @@ static void EncryptDataVectorized(DataChunk &args, ExpressionState &state,
                                     size, state, result, uint8_t(vector_type));
     case LogicalTypeId::VARCHAR:
     case LogicalTypeId::VARINT:
+    case LogicalTypeId::CHAR:
     case LogicalTypeId::BLOB:
     case LogicalTypeId::MAP:
     case LogicalTypeId::LIST:
