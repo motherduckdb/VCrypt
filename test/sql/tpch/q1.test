@@ -1,0 +1,34 @@
+# name: test/sql/tpch/q1.test
+# description: Test tpch q1 with encrypted data
+# group: [simple-encryption/tpch]
+
+require simple_encryption
+
+require tpch
+
+# Ensure any currently stored secrets don't interfere with the test
+statement ok
+set allow_persistent_secrets=false;
+
+statement ok
+CALL dbgen(sf=0);
+
+# Create an internal secret (for internal encryption of columns)
+statement ok
+CREATE SECRET key_2 (
+    TYPE VCRYPT,
+    TOKEN 'ABCDEFGHIJKLMNOP',
+    LENGTH 16
+);
+
+statement ok
+ALTER TABLE lineitem ADD COLUMN encrypted_l_orderkey E_BIGINT;
+
+statement ok
+ALTER TABLE lineitem ADD COLUMN decrypted_l_orderkey BIGINT;
+
+statement ok
+UPDATE lineitem SET encrypted_l_orderkey = encrypt(l_orderkey, 'key_2');
+
+statement ok
+UPDATE lineitem SET decrypted_l_orderkey = decrypt(encrypted_l_orderkey, 'key_2');
