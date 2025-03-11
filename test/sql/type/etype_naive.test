@@ -1,5 +1,5 @@
-# name: test/sql/EType/etype_naive.test
-# description: Test novel user defined EType
+# name: test/sql/type/etype_naive.test
+# description: Test novel user defined type
 # group: [simple-encryption/vectorized]
 
 require simple_encryption

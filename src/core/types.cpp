@@ -10,8 +10,9 @@ namespace core {
 vector<LogicalType> EncryptionTypes::IsAvailable() {
   vector<LogicalType> types = {
       LogicalType::VARCHAR,      LogicalType::INTEGER,      LogicalType::UINTEGER,
-      LogicalType::BIGINT,   LogicalType::UBIGINT, LogicalType::DATE, LogicalType::TIMESTAMP,
-  LogicalType::FLOAT, LogicalType::DOUBLE};
+      LogicalType::BIGINT,   LogicalType::UBIGINT, LogicalType::DATE,
+      LogicalType::TIMESTAMP, LogicalType::FLOAT, LogicalType::DOUBLE
+  };
   return types;
 }
 

@@ -378,8 +378,6 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   }
 
   if (lstate.batch_nr == 0) {
-    // TODO; this does not work well yet, need to check if the IV is set correctly
-    // what happens: after two vectors the IV counter is probably incorrect?
     lstate.ResetIV<T>(counter_vec_data[0]);
     // initialize encryption state
     lstate.encryption_state->InitializeDecryption(
@@ -405,7 +403,6 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
     if (to_process_batch > batch_size) {
       to_process_batch -= batch_size;
     } else {
-      // processing finalized
       to_process_batch = 0;
       break;
     }
