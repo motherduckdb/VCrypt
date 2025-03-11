@@ -19,7 +19,6 @@ public:
 
   // nonce metadata
   uint32_t counter = 0;
-  bool is_initialized = false;
 
   // bitmap for decrypted batches
   uint8_t* is_decrypted;

@@ -95,13 +95,13 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
       reinterpret_cast<const_data_ptr_t>(lstate.iv), 16, key);
 
   auto batch_size = BATCH_SIZE;
-  lstate.to_process_batch = size;
+  lstate.to_process = size;
   auto total_size = sizeof(T) * size;
 
-  if (lstate.to_process_batch > batch_size) {
+  if (lstate.to_process > batch_size) {
     batch_size = BATCH_SIZE;
   } else {
-    batch_size = lstate.to_process_batch;
+    batch_size = lstate.to_process;
   }
 
   lstate.batch_size_in_bytes = batch_size * sizeof(T);
@@ -113,7 +113,7 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
   auto buffer_offset = 0;
 
   // TODO: for strings this works different because the string size is variable
-  while (lstate.to_process_batch) {
+  while (lstate.to_process) {
 
     // TODO: fix for edge case; resulting bytes are less then 64 bits (=8 bytes)
     auto processed = batch_nr * BATCH_SIZE;
@@ -146,17 +146,17 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
     batch_nr++;
 
     // todo: optimize
-    if (lstate.to_process_batch > BATCH_SIZE) {
-      lstate.to_process_batch -= BATCH_SIZE;
+    if (lstate.to_process > BATCH_SIZE) {
+      lstate.to_process -= BATCH_SIZE;
     } else {
       // processing finalized
-      lstate.to_process_batch = 0;
+      lstate.to_process = 0;
       break;
     }
 
-    if (lstate.to_process_batch < BATCH_SIZE) {
-      batch_size = lstate.to_process_batch;
-      lstate.batch_size_in_bytes = lstate.to_process_batch * sizeof(T);
+    if (lstate.to_process < BATCH_SIZE) {
+      batch_size = lstate.to_process;
+      lstate.batch_size_in_bytes = lstate.to_process * sizeof(T);
     }
   }
 
@@ -219,34 +219,34 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   auto &blob_child = DictionaryVector::Child(*blob);
   auto blob_child_data = FlatVector::GetData<string_t>(blob_child);
 
-  // todo: FIX! check if aligned with 16 bytes
   if (lstate.batch_nr == 0) {
     lstate.encryption_state->InitializeEncryption(
         reinterpret_cast<const_data_ptr_t>(lstate.iv), 16, key);
   }
 
-  auto batch_size = BATCH_SIZE;
-  lstate.to_process_batch = size;
-  auto total_size = sizeof(T) * size;
+  uint32_t batch_size;
+  lstate.to_process = size;
+  auto rounded_size = size + (BATCH_SIZE - 1) & ~(BATCH_SIZE - 1);
+  auto total_size = sizeof(T) * rounded_size;
 
-  if (lstate.to_process_batch > BATCH_SIZE) {
+  if (lstate.to_process > BATCH_SIZE) {
     batch_size = BATCH_SIZE;
   } else {
-    batch_size = lstate.to_process_batch;
+    batch_size = lstate.to_process;
   }
 
   lstate.batch_size_in_bytes = batch_size * sizeof(T);
   uint64_t plaintext_bytes;
 
-  lstate.encryption_state->Process(
-      reinterpret_cast<const unsigned char *>(input_vector), total_size,
-      lstate.buffer_p, total_size);
+  // copy the input vector to the buffer for padding
+  memcpy(lstate.buffer_p, input_vector, size * sizeof(T));
+  lstate.encryption_state->Process(lstate.buffer_p, total_size, lstate.buffer_p, total_size);
 
   auto index = 0;
   auto batch_nr = 0;
   uint64_t buffer_offset;
 
-  while (lstate.to_process_batch) {
+  while (lstate.to_process) {
     buffer_offset = batch_nr * lstate.batch_size_in_bytes;
 
     // copy the first 64 bits of plaintext of each batch
@@ -278,18 +278,16 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
 
     batch_nr++;
 
-    // todo: optimize
-    if (lstate.to_process_batch > BATCH_SIZE) {
-      lstate.to_process_batch -= BATCH_SIZE;
+    // todo: optimize this chunk of code
+    if (lstate.to_process > BATCH_SIZE) {
+      lstate.to_process -= BATCH_SIZE;
     } else {
       // processing finalized
-      lstate.to_process_batch = 0;
+      lstate.to_process = 0;
       break;
     }
-
-    if (lstate.to_process_batch < BATCH_SIZE) {
-      batch_size = lstate.to_process_batch;
-      lstate.batch_size_in_bytes = lstate.to_process_batch * sizeof(T);
+    if (lstate.to_process < BATCH_SIZE) {
+      batch_size = lstate.to_process;
     }
   }
 

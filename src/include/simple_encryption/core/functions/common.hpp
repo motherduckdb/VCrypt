@@ -17,7 +17,7 @@ public:
   uint32_t counter = -2;
   uint32_t index = 0;
   uint32_t batch_nr = 0;
-  uint32_t to_process_batch;
+  uint32_t to_process;
   uint64_t batch_size_in_bytes;
   uint32_t max_buffer_size;
   shared_ptr<EncryptionState> encryption_state;

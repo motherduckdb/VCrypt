@@ -13,9 +13,12 @@ uint32_t GenerateRandom(RandomEngine *engine) {
 
 VCryptFunctionLocalState::VCryptFunctionLocalState(ClientContext &context, EncryptFunctionData *bind_data) : arena(BufferAllocator::Get(context)) {
 
-  // currently for reproducability
+#ifdef DEBUG
   auto seed = 1;
   RandomEngine random_engine(seed);
+#else
+  RandomEngine random_engine;
+#endif
 
   iv[0] = GenerateRandom(&random_engine);
   iv[1] = GenerateRandom(&random_engine);

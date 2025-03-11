@@ -1,0 +1,24 @@
+# name: benchmark/tpch/load.benchmark
+# description:TPCH load with VCRYPT
+# group: [vcrypt]
+
+name VCRYPT Data Import (In-Memory)
+group vcrypt
+subgroup tpch
+
+require simple-encryption
+require tpch
+require httpfs
+
+load
+CALL dbgen(sf=0);
+CREATE SECRET key_1 (TYPE VCRYPT, TOKEN 'ABCDEFGHIJKLMNOP', LENGTH 16);
+COPY lineitem TO '${BENCHMARK_DIR}/lineitem_encrypted.parquet' (ENCRYPTION_CONFIG {footer_key: 'key128'});
+DROP TABLE lineitem;
+CREATE TABLE lineitem(l_orderkey E_INTEGER, l_partkey E_INTEGER, l_suppkey E_INTEGER, l_linenumber E_INTEGER, l_quantity E_INTEGER, l_extendedprice DECIMAL(15,2) NOT NULL, l_discount DECIMAL(15,2) NOT NULL, l_tax DECIMAL(15,2) NOT NULL, l_returnflag E_VARCHAR NOT NULL, l_linestatus E_VARCHAR NOT NULL, l_shipdate DATE NOT NULL, l_commitdate DATE NOT NULL, l_receiptdate DATE NOT NULL, l_shipinstruct E_VARCHAR, l_shipmode E_VARCHAR, l_comment E_VARCHAR);
+
+run
+COPY lineitem FROM '${BENCHMARK_DIR}/lineitem_encrypted.parquet' (ENCRYPTION_CONFIG {footer_key: 'key128'});
+
+cleanup
+DROP TABLE lineitem;
