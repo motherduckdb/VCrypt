@@ -44,3 +44,32 @@ SELECT decrypted_values FROM test_1 LIMIT 10;
 1
 1
 1
+
+statement ok
+CREATE TABLE test_2 AS SELECT 'example_string' AS value FROM range(150);
+
+statement ok
+ALTER TABLE test_2 ADD COLUMN encrypted_values E_VARCHAR;
+
+statement ok
+ALTER TABLE test_2 ADD COLUMN decrypted_values VARCHAR;
+
+statement ok
+UPDATE test_2 SET encrypted_values = encrypt(value, 'key_1');
+
+statement ok
+UPDATE test_2 SET decrypted_values = decrypt(encrypted_values, 'key_1');
+
+query I
+SELECT decrypted_values FROM test_2 LIMIT 10;
+----
+example_string
+example_string
+example_string
+example_string
+example_string
+example_string
+example_string
+example_string
+example_string
+example_string
