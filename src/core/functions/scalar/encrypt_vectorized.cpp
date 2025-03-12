@@ -366,15 +366,20 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
   auto counter_init = 0;
 
   auto index = 0;
-  uint16_t batches = ceil(size / BATCH_SIZE);
+  uint16_t batches = (size + BATCH_SIZE - 1) / BATCH_SIZE;
   auto const metadata_len = 128 * sizeof(uint64_t) + 1;
+
+  uint32_t batch_size;
+  lstate.to_process = size;
+
+  if (size > BATCH_SIZE) {
+    batch_size = BATCH_SIZE;
+  } else {
+    batch_size = size;
+  }
 
   for (uint32_t i = 0; i < batches; i++) {
     lstate.ResetIV<T>(counter_init);
-
-#ifdef DEBUG
-    auto ctr_val = lstate.iv[3];
-#endif
 
     // Initialize Encryption
     lstate.encryption_state->InitializeEncryption(
@@ -392,7 +397,7 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
     uint64_t val_size;
 
     // loop through the batch to see if we have to reallocate the buffer
-    for (uint32_t j = 0; j < BATCH_SIZE; j++) {
+    for (uint32_t j = 0; j < batch_size; j++) {
       val_size = input_vector[index].GetSize();
       current_offset += val_size;
       Store<uint64_t>(current_offset, offset_buf_ptr);
@@ -400,7 +405,7 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
       index++;
     }
 
-    index -= BATCH_SIZE;
+    index -= batch_size;
 
     blob_child_data[i] = StringVector::EmptyString(blob_child, current_offset);
     auto batch_ptr = blob_child_data[i].GetDataWriteable();
@@ -409,7 +414,7 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
     batch_ptr += metadata_len;
 
     // loop again to store the actual values
-    for (uint32_t j = 0; j < BATCH_SIZE; j++) {
+    for (uint32_t j = 0; j < batch_size; j++) {
       val_size = input_vector[index].GetSize();
       memcpy(batch_ptr, input_vector[index].GetDataWriteable(), val_size);
       batch_ptr += val_size;
@@ -429,8 +434,17 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
     // round off to the nearest block of 16 bytes
     counter_init += ceil((current_offset  + 1) / 16);
 
-    // TODO; only multiples of 128 (BATCH_SIZE) are supported
-    // TODO; FIX padding and later compaction
+    // todo: optimize this chunk of code
+    if (lstate.to_process > BATCH_SIZE) {
+      lstate.to_process -= BATCH_SIZE;
+    } else {
+      // processing finalized
+      lstate.to_process = 0;
+      break;
+    }
+    if (lstate.to_process < BATCH_SIZE) {
+      batch_size = lstate.to_process;
+    }
   }
 }
 
