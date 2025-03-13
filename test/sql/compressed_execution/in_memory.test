@@ -1,3 +1,10 @@
+# name: test/sql/in_memory.test
+# description: Test flattened (in memory) execution for VCrypt
+# group: [simple-encryption]
+
+#statement ok
+#PRAGMA enable_verification;
+
 statement ok
 set allow_persistent_secrets=false;
 
@@ -12,22 +19,19 @@ CREATE SECRET key_2 (
     LENGTH 16
 );
 
-# load the DB from disk
-statement ok
-ATTACH 'encdb001.db' AS enc;
-
 statement ok
 CALL dbgen(sf=0.01);
 
 statement ok
-SET threads=1;
-
-statement ok
-CREATE TABLE enc.encrypted_lineitem AS
+CREATE TABLE encrypted_lineitem AS
 SELECT encrypt(l_orderkey, 'key_2') AS l_orderkey FROM lineitem;
 
-statement ok
-DROP TABLE lineitem;
-
-statement ok
-CHECKPOINT;
+query I
+SELECT decrypt(l_orderkey, 'key_2') FROM encrypted_lineitem;
+----
+1
+1
+1
+1
+1
+1
