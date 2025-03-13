@@ -1,4 +1,0 @@
-require tpch
-
-statement ok
-CALL dbgen(sf=0.5);

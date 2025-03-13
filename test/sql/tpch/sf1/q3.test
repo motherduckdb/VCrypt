@@ -1,4 +1,4 @@
-# name: test/sql/copy/parquet/vcrypt_encrypted_tpch.test_slow
+# name: test/sql/tpch/q3.test
 # description: Test VCRYPT encryption with OpenSSL for TPC-H
 # group: [vcrypt]
 
@@ -8,12 +8,10 @@ set allow_persistent_secrets=false;
 
 require simple_encryption
 
-require httpfs
-
 require tpch
 
 statement ok
-CALL dbgen(sf=0.1);
+CALL dbgen(sf=1);
 
 # re-add key upon loading the DB again
 statement ok
@@ -47,7 +45,7 @@ FROM lineitem;
 statement ok
 DROP TABLE lineitem;
 
-statement ok;
+statement ok
 CREATE VIEW lineitem AS
 SELECT
     decrypt(l_orderkey, 'key_2') AS l_orderkey,
@@ -69,7 +67,6 @@ SELECT
 FROM encrypted_lineitem;
 
 query I
-PRAGMA tpch(1)
-
-#----
-#<FILE>:extension/tpch/dbgen/answers/sf1/q01.csv
+PRAGMA tpch(3)
+----
+<FILE>:simple_encryption/test/tpch/q03.csv

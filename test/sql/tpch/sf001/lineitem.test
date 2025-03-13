@@ -1,0 +1,54 @@
+statement ok
+set allow_persistent_secrets=false;
+
+require simple_encryption
+
+require tpch
+
+# load the DB from disk
+statement ok
+ATTACH 'enc.db' AS enc;
+
+statement ok
+CALL dbgen(sf=0.01);
+
+# re-add key upon loading the DB again
+statement ok
+CREATE SECRET key_2 (
+    TYPE VCRYPT,
+    TOKEN 'ABCDEFGHIJKLMNOP',
+    LENGTH 16
+);
+
+statement ok
+CREATE TABLE enc.encrypted_lineitem AS
+SELECT
+    encrypt(l_orderkey, 'key_2') AS l_orderkey,
+FROM lineitem;
+
+statement ok
+DROP TABLE lineitem;
+
+statement ok
+CHECKPOINT;
+
+statement ok
+DETACH enc;
+
+statement ok
+ATTACH enc;
+
+statement ok
+SELECT decrypt(l_orderkey, 'key_2') FROM enc.encrypted_lineitem;
+
+statement ok
+SELECT
+
+#statement ok
+#CREATE VIEW lineitem AS
+#SELECT
+#    decrypt(l_orderkey, 'key_2') AS l_orderkey,
+#FROM encrypted_lineitem;
+#
+#statement ok
+#select l_orderkey from lineitem;

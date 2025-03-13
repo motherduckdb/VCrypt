@@ -1,0 +1,72 @@
+# name: test/sql/tpch/q3.test
+# description: Test VCRYPT encryption with OpenSSL for TPC-H
+# group: [vcrypt]
+
+# Ensure any currently stored secrets don't interfere with the test
+statement ok
+set allow_persistent_secrets=false;
+
+require simple_encryption
+
+require tpch
+
+statement ok
+CALL dbgen(sf=0.1);
+
+# re-add key upon loading the DB again
+statement ok
+CREATE SECRET key_2 (
+    TYPE VCRYPT,
+    TOKEN 'ABCDEFGHIJKLMNOP',
+    LENGTH 16
+);
+
+statement ok
+CREATE TABLE encrypted_lineitem AS
+SELECT
+    encrypt(l_orderkey, 'key_2') AS l_orderkey,
+    encrypt(l_partkey, 'key_2') AS l_partkey,
+    encrypt(l_suppkey, 'key_2') AS l_suppkey,
+    encrypt(l_linenumber, 'key_2') AS l_linenumber,
+    l_quantity,
+    l_extendedprice,
+    l_discount,
+    l_tax,
+    l_returnflag,
+    l_linestatus,
+    l_shipdate,
+    l_commitdate,
+    l_receiptdate,
+    l_shipinstruct,
+    l_shipmode,
+    l_comment
+FROM lineitem;
+
+statement ok
+DROP TABLE lineitem;
+
+statement ok
+CREATE VIEW lineitem AS
+SELECT
+    decrypt(l_orderkey, 'key_2') AS l_orderkey,
+    decrypt(l_partkey, 'key_2') AS l_partkey,
+    decrypt(l_suppkey, 'key_2') AS l_suppkey,
+    decrypt(l_linenumber, 'key_2') AS l_linenumber,
+    l_quantity,
+    l_extendedprice,
+    l_discount,
+    l_tax,
+    l_returnflag,
+    l_linestatus,
+    l_shipdate,
+    l_commitdate,
+    l_receiptdate,
+    l_shipinstruct,
+    l_shipmode,
+    l_comment
+FROM encrypted_lineitem;
+
+query I
+PRAGMA tpch(3)
+----
+<FILE>:test/sql/tpch/sf01/q03.csv
