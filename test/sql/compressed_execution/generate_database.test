@@ -1,0 +1,32 @@
+statement ok
+set allow_persistent_secrets=false;
+
+require simple_encryption
+
+require tpch
+
+statement ok
+CREATE SECRET key_2 (
+    TYPE VCRYPT,
+    TOKEN 'ABCDEFGHIJKLMNOP',
+    LENGTH 16
+);
+
+for 0.01 0.1 1
+do
+# load the DB from disk
+statement ok
+ATTACH 'esf{$i}.db' AS enc$1;
+
+statement ok
+CALL dbgen(sf=$i);
+
+statement ok
+CREATE TABLE enc.encrypted_lineitem AS
+SELECT encrypt(l_orderkey, 'key_2') AS l_orderkey FROM lineitem;
+
+statement ok
+DROP TABLE lineitem;
+
+statement ok
+CHECKPOINT;

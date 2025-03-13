@@ -7,3 +7,6 @@ testext
 test/python/__pycache__/
 .Rhistory
 test/*.db
+*.db
+*.wal
+*.tmp*
