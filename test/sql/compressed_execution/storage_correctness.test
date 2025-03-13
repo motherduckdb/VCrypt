@@ -1,0 +1,44 @@
+# name: test/sql/compressed_execution.test
+# description: Test compressed dict execution for VCrypt
+# group: [simple-encryption]
+
+#statement ok
+#PRAGMA enable_verification;
+
+statement ok
+set allow_persistent_secrets=false;
+
+require simple_encryption
+
+require tpch
+
+# load the DB from disk
+statement ok
+ATTACH 'encdb001.db' AS enc;
+
+# re-add key upon loading the DB again
+statement ok
+CREATE SECRET key_2 (
+    TYPE VCRYPT,
+    TOKEN 'ABCDEFGHIJKLMNOP',
+    LENGTH 16
+);
+
+statement ok
+ALTER TABLE enc.encrypted_lineitem DROP COLUMN IF EXISTS d_l_orderkey;
+
+statement ok
+ALTER TABLE enc.encrypted_lineitem ADD COLUMN d_l_orderkey BIGINT;
+
+statement ok
+UPDATE enc.encrypted_lineitem SET d_l_orderkey = decrypt(l_orderkey, 'key_2');
+
+query I
+SELECT MIN(d_l_orderkey) FROM enc.encrypted_lineitem;
+----
+1
+
+query I
+SELECT MAX(d_l_orderkey) FROM enc.encrypted_lineitem;
+----
+60000
