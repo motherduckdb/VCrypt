@@ -390,6 +390,20 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   auto &nonce_hi = children[0];
   auto &nonce_lo = children[1];
 
+  // loop through all entries to see if they are dictionary vectors
+  size_t dict_count = 0;
+  for (idx_t i = 0; i < children.size(); i++) {
+    if (children[i]->GetVectorType() == VectorType::DICTIONARY_VECTOR) {
+      dict_count++;
+    }
+  }
+  if (dict_count == children.size()){
+    // check prefix in local sate
+    // check buffer in local state
+    // check if the nonce is the same
+    throw NotImplementedException("Did not implement in-query dictionary vector decryption");
+  }
+
   bool same_nonce = false;
   if (nonce_hi->GetVectorType() == VectorType::CONSTANT_VECTOR &&
       nonce_lo->GetVectorType() == VectorType::CONSTANT_VECTOR){
@@ -405,15 +419,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   cipher_vec->ToUnifiedFormat(size, cipher_vec_u);
 
   auto &value_vec = children[4];
-
   D_ASSERT(value_vec->GetType() == LogicalTypeId::BLOB);
-
-#ifdef DEBUG
-  if (size == 783){
-    auto nhitype = nonce_hi->GetVectorType();
-    auto nlotype = nonce_lo->GetVectorType();
-  }
-#endif
 
   UnifiedVectorFormat nonce_hi_u;
   UnifiedVectorFormat nonce_lo_u;

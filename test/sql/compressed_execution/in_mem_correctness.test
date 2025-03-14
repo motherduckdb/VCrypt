@@ -47,3 +47,8 @@ query I
 SELECT MAX(d_l_orderkey) FROM e_lineitem;
 ----
 60000
+
+query I
+SELECT SUM(d_l_orderkey) FROM e_lineitem;
+----
+1802759573

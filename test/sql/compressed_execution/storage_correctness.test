@@ -1,9 +1,9 @@
-# name: test/sql/compressed_execution.test
-# description: Test compressed dict execution for VCrypt
+# name: test/sql/compressed_execution/storage_correctness.test
+# description: Test compressed dict execution for VCrypt from storage
 # group: [simple-encryption]
 
-#statement ok
-#PRAGMA enable_verification;
+statement ok
+PRAGMA enable_verification;
 
 statement ok
 set allow_persistent_secrets=false;
@@ -42,3 +42,8 @@ query I
 SELECT MAX(d_l_orderkey) FROM enc.encrypted_lineitem;
 ----
 60000
+
+query I
+SELECT SUM(d_l_orderkey) FROM enc.encrypted_lineitem;
+----
+1802759573
