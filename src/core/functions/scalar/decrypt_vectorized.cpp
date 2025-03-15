@@ -27,24 +27,26 @@ namespace simple_encryption {
 namespace core {
 
 uint16_t UnMaskCipher(uint16_t cipher, uint64_t *plaintext_bytes) {
-  //  const uint64_t prime = 10251357202697351;
-  //  auto const a_plaintext = plaintext_bytes + 1;
-  //  auto random_val = *plaintext_bytes * prime;
 
-  // mask the first 8 bits by shifting and cast to uint16_t
-  //  uint16_t mask = static_cast<uint16_t>((random_val) >> 56);
-  //  uint16_t unmasked_cipher = cipher ^ mask;
-  //
-  //  bool is_null = (unmasked_cipher & 1) != 0;
-  //
-  //  if (is_null) {
-  //    return NULL;
-  //  }
-  //
-  //  // remove lsb
-  //  cipher = static_cast<uint16_t>(unmasked_cipher >> 1);
-  //
-  //  return cipher;
+#if 0
+    const uint64_t prime = 10251357202697351;
+    auto const a_plaintext = plaintext_bytes + 1;
+    auto random_val = *plaintext_bytes * prime;
+
+   // mask the first 8 bits by shifting and cast to uint16_t
+    uint16_t mask = static_cast<uint16_t>((random_val) >> 56);
+    uint16_t unmasked_cipher = cipher ^ mask;
+
+    bool is_null = (unmasked_cipher & 1) != 0;
+
+    if (is_null) {
+      return NULL;
+    }
+
+    // remove lsb
+    cipher = static_cast<uint16_t>(unmasked_cipher >> 1);
+#endif
+
   return cipher;
 }
 
@@ -75,6 +77,7 @@ inline void CacheAndSetNonce(VCryptFunctionLocalState &lstate, uint64_t nonce_hi
   if (lstate.nonce_hi == nonce_hi && lstate.nonce_lo == nonce_lo) {
     return;
   }
+
   lstate.nonce_hi = nonce_hi;
   lstate.nonce_lo = nonce_lo;
 
@@ -83,9 +86,32 @@ inline void CacheAndSetNonce(VCryptFunctionLocalState &lstate, uint64_t nonce_hi
   lstate.iv[2] = static_cast<uint32_t>(nonce_lo);
 }
 
+inline bool CheckNonceSimilarity(const SelectionVector *nonce_hi_u, const SelectionVector *nonce_lo_u, const ValidityMask *result_validity,
+                     const uint64_t *nonce_hi_data, const uint64_t *nonce_lo_data, size_t size) {
+
+    auto hi_idx = nonce_hi_u->get_index(0);
+    auto lo_idx = nonce_lo_u->get_index(0);
+    uint64_t nonce_hi_val = nonce_hi_data[hi_idx];
+    uint64_t nonce_lo_val = nonce_lo_data[lo_idx];
+
+    for (idx_t i = 1; i < size; i++) {
+      if (!result_validity->RowIsValid(i)) {
+        continue;
+      }
+      hi_idx = nonce_hi_u->get_index(i);
+      lo_idx = nonce_lo_u->get_index(i);
+
+      if (nonce_hi_data[hi_idx] != nonce_hi_val ||
+          nonce_lo_data[lo_idx] != nonce_lo_val) {
+        return false;
+      }
+    }
+    return true;
+}
+
 
 template <typename T>
-void DecryptSingleValue(uint32_t counter_value, uint16_t cipher_value,
+inline void DecryptSingleValue(uint32_t counter_value, uint16_t cipher_value,
                         string_t value, T *result_data,
                         VCryptFunctionLocalState &lstate, const string &key,
                         uint32_t index) {
@@ -121,6 +147,47 @@ void DecryptSingleValue(uint32_t counter_value, uint16_t cipher_value,
 
   // Load data into result vector
   result_data[index] = Load<T>(base_ptr + (cipher_value * sizeof(T)));
+}
+
+template <typename T>
+inline void DecryptFixedSizedData(const SelectionVector *nonce_hi_u, const SelectionVector *nonce_lo_u,
+                                  const uint64_t *nonce_hi_data, const uint64_t *nonce_lo_data,
+                                  const ValidityMask &result_validity, const UnifiedVectorFormat &counter_vec_u,
+                                  const UnifiedVectorFormat &cipher_vec_u, const UnifiedVectorFormat &value_vec_u,
+                                  T *result_data, VCryptFunctionLocalState &lstate, const string &key,
+                                  bool same_nonce, size_t size) {
+  uint32_t ctr;
+  uint16_t cpr;
+  string_t val;
+
+  auto ctr_data = UnifiedVectorFormat::GetData<uint32_t>(counter_vec_u);
+  auto cpr_data = UnifiedVectorFormat::GetData<uint16_t>(cipher_vec_u);
+  auto val_data = UnifiedVectorFormat::GetData<string_t>(value_vec_u);
+
+  for (uint32_t i = 0; i < size; i++) {
+    if (!result_validity.RowIsValid(i)) {
+      continue;
+    }
+
+    ctr = ctr_data[counter_vec_u.sel->get_index(i)];
+    cpr = cpr_data[cipher_vec_u.sel->get_index(i)];
+    val = val_data[value_vec_u.sel->get_index(i)];
+
+    if (same_nonce && ctr == lstate.counter) {
+      D_ASSERT(memcmp(lstate.prefix, val.GetPrefix(), 4) == 0);
+      result_data[i] = Load<T>(lstate.buffer_p + (cpr * sizeof(T)));
+      continue;
+    }
+
+    if (!same_nonce) {
+      CacheAndSetNonce(lstate, nonce_hi_data[nonce_hi_u->get_index(i)], nonce_lo_data[nonce_lo_u->get_index(i)]);
+    }
+
+    memcpy(lstate.prefix, val.GetPrefix(), 4);
+    lstate.counter = ctr;
+    DecryptSingleValue<T>(ctr, cpr, val, result_data, lstate, key, i);
+  }
+
 }
 
 template <typename T>
@@ -215,77 +282,27 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   cipher_vec->ToUnifiedFormat(size, cipher_vec_u);
   value_vec->ToUnifiedFormat(size, value_vec_u);
 
-  auto nonce_hi_data = UnifiedVectorFormat::GetData<uint64_t>(nonce_hi_u);
-  auto nonce_lo_data = UnifiedVectorFormat::GetData<uint64_t>(nonce_lo_u);
-  auto ctr_data = UnifiedVectorFormat::GetData<uint32_t>(counter_vec_u);
-  auto cpr_data = UnifiedVectorFormat::GetData<uint16_t>(cipher_vec_u);
-  auto val_data = UnifiedVectorFormat::GetData<string_t>(value_vec_u);
-
   // -------- Set and Check Nonce Similarity --------
 
+  auto nonce_hi_data = UnifiedVectorFormat::GetData<uint64_t>(nonce_hi_u);
+  auto nonce_lo_data = UnifiedVectorFormat::GetData<uint64_t>(nonce_lo_u);
+
   bool same_nonce = true;
-  idx_t hi_idx = nonce_hi_u.sel->get_index(0);
-  idx_t lo_idx = nonce_lo_u.sel->get_index(0);
+  if (!(nonce_lo->GetVectorType() == VectorType::CONSTANT_VECTOR &&
+        nonce_hi->GetVectorType() == VectorType::CONSTANT_VECTOR)){
 
-  lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[hi_idx] >> 32);
-  lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[hi_idx] & 0xFFFFFFFF);
-  lstate.iv[2] = nonce_lo_data[lo_idx];
-
-  if (!(nonce_hi->GetVectorType() == VectorType::CONSTANT_VECTOR &&
-      nonce_lo->GetVectorType() == VectorType::CONSTANT_VECTOR)) {
-    uint64_t nonce_hi_val = nonce_hi_data[hi_idx];
-    uint64_t nonce_lo_val = nonce_lo_data[lo_idx];
-
-    for (idx_t i = 1; i < size; i++) {
-      if (!result_validity.RowIsValid(i)) {
-        continue;
-      }
-      hi_idx = nonce_hi_u.sel->get_index(i);
-      lo_idx = nonce_lo_u.sel->get_index(i);
-
-      if (nonce_hi_data[hi_idx] != nonce_hi_val ||
-          nonce_lo_data[lo_idx] != nonce_lo_val) {
-        same_nonce = false;
-        break;
-      }
-    }
+    same_nonce = CheckNonceSimilarity(nonce_hi_u.sel, nonce_lo_u.sel, &result_validity,
+                                      nonce_hi_data, nonce_lo_data, size);
   }
 
-  // ---------- We can check whether ctr and cpr are increasing ----------
+  CacheAndSetNonce(lstate, nonce_hi_data[nonce_hi_u.sel->get_index(0)],
+                   nonce_lo_data[nonce_lo_u.sel->get_index(0)]);
 
-  //  TODO; we can decrypt en put everything in 1 go, IF;
-  // the counter is 128x the same for the whole vector
-  // the cipher is increasing
-  // the selection vector in the dict is sequential (128 x the same in the sel vec) the cipher is increasing from 0 to 127
+  // -------- Decrypt --------
 
-  // ---------- Decrypt Fixed Sized Data ----------
-
-  uint32_t ctr;
-  uint16_t cpr;
-  string_t val;
-
-  for (uint32_t i = 0; i < size; i++) {
-    if (!result_validity.RowIsValid(i)) {
-      continue;
-    }
-
-    ctr = ctr_data[counter_vec_u.sel->get_index(i)];
-    cpr = cpr_data[cipher_vec_u.sel->get_index(i)];
-    val = val_data[value_vec_u.sel->get_index(i)];
-
-    if (ctr == lstate.counter && (memcmp(lstate.prefix, val.GetPrefix(), 4) == 0) && same_nonce) {
-      result_data[i] = Load<T>(lstate.buffer_p + (cpr * sizeof(T)));
-      continue;
-    }
-
-    if (!same_nonce) {
-      CacheAndSetNonce(lstate, nonce_hi_data[i], nonce_lo_data[i]);
-    }
-
-    memcpy(lstate.prefix, val.GetPrefix(), 4);
-    lstate.counter = ctr;
-    DecryptSingleValue<T>(ctr, cpr, val, result_data, lstate, *key, i);
-  }
+  DecryptFixedSizedData(nonce_hi_u.sel, nonce_lo_u.sel, nonce_hi_data, nonce_lo_data, result_validity,
+                          counter_vec_u, cipher_vec_u, value_vec_u, result_data,
+                          lstate, *key, same_nonce, size);
 }
 
 
