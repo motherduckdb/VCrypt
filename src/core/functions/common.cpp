@@ -44,6 +44,7 @@ VCryptFunctionLocalState::VCryptFunctionLocalState(ClientContext &context, Encry
 
   if (bind_data->type.id() == LogicalTypeId::VARCHAR) {
     // allocate buffer for encrypted data
+    // can we delete this?
     buffer_p = (data_ptr_t)arena.Allocate(128);
   }
 }

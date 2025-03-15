@@ -104,13 +104,12 @@ void DecryptSingleValue(uint32_t counter_value, uint16_t cipher_value,
                         VCryptFunctionLocalState &lstate, const string &key,
                         uint32_t index) {
 
-  // TODO; create caching mechanism in the local state so that you not have to re-encrypt all data reset IV and initialize encryption state
   lstate.ResetIV<T>(counter_value);
+
   lstate.encryption_state->InitializeDecryption(
       reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
       reinterpret_cast<const string *>(&key));
 
-  // decrypt the value into buffer_p
   lstate.encryption_state->Process(
       reinterpret_cast<const_data_ptr_t>(value.GetData()),
       BATCH_SIZE * sizeof(T),
@@ -120,7 +119,7 @@ void DecryptSingleValue(uint32_t counter_value, uint16_t cipher_value,
   auto *base_ptr = lstate.buffer_p;
 
 #ifdef DEBUG
-  auto first_val = Load<T>(lstate.buffer_p);
+  auto loaded_val_ = Load<T>(base_ptr + (cipher_value * sizeof(T)));
 #endif
 
 #if 0
@@ -133,10 +132,7 @@ void DecryptSingleValue(uint32_t counter_value, uint16_t cipher_value,
     // Get position from cipher
     uint16_t position = UnMaskCipher(cipher_value, &plaintext_bytes);
 #endif
-
-  //    memcpy(&result_data[index], base_ptr + (cipher_value * sizeof(T)), sizeof(T));
   // Load data into result vector
-  auto offset = cipher_value * sizeof(T);
   result_data[index] = Load<T>(base_ptr + (cipher_value * sizeof(T)));
 }
 
@@ -150,12 +146,20 @@ void DecryptPerValue(uint64_t *nonce_hi_data, uint64_t *nonce_lo_data,
 
   // create cache here if counter is similar
   // decrypt every value in the vector separately
+
   for (uint32_t i = 0; i < size; i++) {
+    // todo; optimize
     if (!same_nonce) {
-      // assign the right parts of the nonce and counter to iv
-      lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[i] >> 32);
-      lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[i] & 0xFFFFFFFF);
-      lstate.iv[2] = nonce_lo_data[i];
+      if (!(lstate.nonce_hi == nonce_hi_data[i] &&
+            lstate.nonce_lo == nonce_lo_data[i])) {
+        lstate.nonce_hi = nonce_hi_data[i];
+        lstate.nonce_lo = nonce_lo_data[i];
+
+        // assign the right parts of the nonce and counter to iv
+        lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[i] >> 32);
+        lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[i] & 0xFFFFFFFF);
+        lstate.iv[2] = static_cast<uint32_t>(nonce_lo_data[i]);
+      }
     }
 
     DecryptSingleValue<T>(counter_vec_data[i], cipher_vec_data[i],
@@ -227,15 +231,11 @@ void DecryptAllBatchesVectorized(VCryptFunctionLocalState &lstate, uint32_t *cou
                                  string_t *value_vec_data, T *result_data, uint64_t size,
                                  const string *key, SelectionVector *sel = nullptr) {
 
-  const char *cached_prefix;
-  // T *cached_plaintext[BATCH_SIZE];
-
   uint32_t batch_size = BATCH_SIZE;
 
   if (size < BATCH_SIZE) {
     batch_size = size;
   }
-
   uint32_t batch_size_in_bytes = sizeof(T) * batch_size;
   uint64_t total_batches = (size + batch_size - 1) / batch_size;
   auto to_process_total = size;
@@ -270,24 +270,6 @@ void DecryptAllBatchesVectorized(VCryptFunctionLocalState &lstate, uint32_t *cou
     reinterpret_cast<unsigned char *>(result_data + base_idx),
     batch_size_in_bytes);
 
-#ifdef DEBUG
-  // cache vs in storage, echt een rampetamp
-  cached_prefix = value_vec_data[dict_idx].GetPrefix();
-  uint64_t output_buf[BATCH_SIZE];
-
-  if (dict_idx == 222){
-    // nada
-    auto out = 0;
-  }
-
-  memcpy(&output_buf, result_data + base_idx, batch_size_in_bytes);
-  for (size_t i = 0; i < batch_size; i++) {
-    if (output_buf[i] == 6079637199272719433) {
-      throw NotImplementedException("Stop execution");
-    }
-  }
-#endif
-
   base_idx += batch_size;
 
   // todo: optimize
@@ -310,8 +292,6 @@ template <typename T>
 void DecryptCompressedExecution(Vector &input_vector, uint64_t size,
                                 ExpressionState &state, Vector &result) {
 
-  // todo; cache first decrypted text
-  // TODO: check validity when storing decrypted values
   ValidityMask &result_validity = FlatVector::Validity(result);
   result.SetVectorType(VectorType::FLAT_VECTOR);
   T *result_data = FlatVector::GetData<T>(result);
@@ -376,12 +356,11 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   ValidityMask &result_validity = FlatVector::Validity(result);
   result.SetVectorType(VectorType::FLAT_VECTOR);
   auto result_data = FlatVector::GetData<T>(result);
+  idx_t src_index;
 
   // local, vcrypt (global) and encryption state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
-  lstate.index = 0;
   auto vcrypt_state = VCryptBasicFun::GetVCryptState(state);
-  // auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
   auto key = VCryptBasicFun::GetKey(state);
 
   D_ASSERT(input_vector.GetType().id() == LogicalTypeId::STRUCT);
@@ -389,44 +368,116 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   auto &children = StructVector::GetEntries(input_vector);
   auto &nonce_hi = children[0];
   auto &nonce_lo = children[1];
-
-  // loop through all entries to see if they are dictionary vectors
-  size_t dict_count = 0;
-  for (idx_t i = 0; i < children.size(); i++) {
-    if (children[i]->GetVectorType() == VectorType::DICTIONARY_VECTOR) {
-      dict_count++;
-    }
-  }
-  if (dict_count == children.size()){
-    // check prefix in local sate
-    // check buffer in local state
-    // check if the nonce is the same
-    throw NotImplementedException("Did not implement in-query dictionary vector decryption");
-  }
-
-  bool same_nonce = false;
-  if (nonce_hi->GetVectorType() == VectorType::CONSTANT_VECTOR &&
-      nonce_lo->GetVectorType() == VectorType::CONSTANT_VECTOR){
-    same_nonce = true;
-  }
-
   auto &counter_vec = children[2];
   auto &cipher_vec = children[3];
-
-  UnifiedVectorFormat counter_vec_u;
-  UnifiedVectorFormat cipher_vec_u;
-  counter_vec->ToUnifiedFormat(size, counter_vec_u);
-  cipher_vec->ToUnifiedFormat(size, cipher_vec_u);
-
   auto &value_vec = children[4];
-  D_ASSERT(value_vec->GetType() == LogicalTypeId::BLOB);
 
   UnifiedVectorFormat nonce_hi_u;
   UnifiedVectorFormat nonce_lo_u;
+  UnifiedVectorFormat counter_vec_u;
+  UnifiedVectorFormat cipher_vec_u;
+
   nonce_hi->ToUnifiedFormat(size, nonce_hi_u);
   nonce_lo->ToUnifiedFormat(size, nonce_lo_u);
-  auto nonce_hi_data = FlatVector::GetData<uint64_t>(*nonce_hi);
-  auto nonce_lo_data = FlatVector::GetData<uint64_t>(*nonce_lo);
+  counter_vec->ToUnifiedFormat(size, counter_vec_u);
+  cipher_vec->ToUnifiedFormat(size, cipher_vec_u);
+  auto nonce_hi_data = (uint64_t *)nonce_hi_u.data;
+  auto nonce_lo_data = (uint64_t *)nonce_lo_u.data;
+
+  // -------- Check Nonce Similarity --------
+
+  bool same_nonce = true;
+  idx_t hi_idx = nonce_hi_u.sel->get_index(0);
+  idx_t lo_idx = nonce_lo_u.sel->get_index(0);
+
+  lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[hi_idx] >> 32);
+  lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[hi_idx] & 0xFFFFFFFF);
+  lstate.iv[2] = static_cast<uint32_t>(nonce_lo_data[lo_idx]);
+
+  if (!(nonce_hi->GetVectorType() == VectorType::CONSTANT_VECTOR &&
+      nonce_lo->GetVectorType() == VectorType::CONSTANT_VECTOR)) {
+
+    uint64_t nonce_hi_val = nonce_hi_data[hi_idx];
+    uint64_t nonce_lo_val = nonce_lo_data[lo_idx];
+
+    for (idx_t i = 1; i < size; i++) {
+      if (!result_validity.RowIsValid(i)) {
+        continue;
+      }
+
+      hi_idx = nonce_hi_u.sel->get_index(i);
+      lo_idx = nonce_lo_u.sel->get_index(i);
+
+      if (nonce_hi_data[hi_idx] != nonce_hi_val ||
+          nonce_lo_data[lo_idx] != nonce_lo_val) {
+
+        same_nonce = false;
+        break;
+      }
+    }
+  }
+
+  // ---------- If the nonce is the same, we check whether the counter and values are ------
+
+  //  we can decrypt en put everything in 1 go, IF;
+  // the counter is 128x the same for the whole vector
+  // the cipher is increasing
+  // the selection vector in the dict is sequential (128 x the same in the sel vec) the cipher is increasing from 0 to 127
+
+  UnifiedVectorFormat value_vec_u;
+  value_vec->ToUnifiedFormat(size, value_vec_u);
+
+  uint32_t ctr;
+  uint16_t cpr;
+  string_t val;
+
+  auto ctr_data = (uint32_t *)counter_vec_u.data;
+  auto cpr_data = (uint16_t *)cipher_vec_u.data;
+  auto val_data = (string_t *)value_vec_u.data;
+
+  // loop through the vector
+  for (uint32_t i = 0; i < size; i++) {
+    if (!result_validity.RowIsValid(i)) {
+      continue;
+    }
+
+    ctr = ctr_data[counter_vec_u.sel->get_index(i)];
+    cpr = cpr_data[cipher_vec_u.sel->get_index(i)];
+    D_ASSERT(cpr < BATCH_SIZE);
+    val = val_data[value_vec_u.sel->get_index(i)];
+
+    if (ctr == lstate.counter && (memcmp(lstate.prefix, val.GetPrefix(), 4) == 0) && same_nonce) {
+
+#ifdef DEBUG
+      auto loaded_val = Load<T>(lstate.buffer_p + (cpr * sizeof(T)));
+#endif
+
+      result_data[i] = Load<T>(lstate.buffer_p + (cpr * sizeof(T)));
+      continue;
+    }
+
+    if (!same_nonce) {
+      // make this a separate function
+      if (!(lstate.nonce_hi == nonce_hi_data[i] &&
+            lstate.nonce_lo == nonce_lo_data[i])) {
+        lstate.nonce_hi = nonce_hi_data[i];
+        lstate.nonce_lo = nonce_lo_data[i];
+
+        // assign the right parts of the nonce and counter to iv
+        lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[i] >> 32);
+        lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[i] & 0xFFFFFFFF);
+        lstate.iv[2] = static_cast<uint32_t>(nonce_lo_data[i]);
+      }
+    }
+
+    memcpy(lstate.prefix, val.GetPrefix(), 4);
+    lstate.counter = ctr;
+    DecryptSingleValue<T>(ctr, cpr, val, result_data, lstate, *key, i);
+  }
+
+#if 0
+
+  D_ASSERT(value_vec->GetType() == LogicalTypeId::BLOB);
 
   // assign the right parts of the nonce and counter to iv
   lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[0] >> 32);
@@ -445,6 +496,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
     } else if (same_nonce) {
 
       // ---------- flattened in memory decryption -----------
+
       UnifiedVectorFormat value_vec_u;
       value_vec->ToUnifiedFormat(size, value_vec_u);
       auto value_vec_data = FlatVector::GetData<string_t>(*value_vec);
@@ -521,6 +573,7 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
       DecryptAllBatchesVectorized<T>(lstate, counter_vec_data, value_vec_data, result_data, size, key);
 
       }
+#endif
 }
 
 

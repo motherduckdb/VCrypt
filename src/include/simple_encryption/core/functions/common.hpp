@@ -14,7 +14,7 @@ public:
   ArenaAllocator arena;
   uint32_t iv[4];
 
-  uint32_t counter = -2;
+  uint32_t counter = -1;
   uint32_t index = 0;
   uint32_t batch_nr = 0;
   uint32_t to_process;
@@ -23,6 +23,11 @@ public:
   shared_ptr<EncryptionState> encryption_state;
 
   data_ptr_t buffer_p;
+  uint64_t nonce_hi;
+  uint64_t nonce_lo;
+
+  // local state cache
+  char prefix[4];
 
 public:
   explicit VCryptFunctionLocalState(ClientContext &context, EncryptFunctionData *bind_data);
