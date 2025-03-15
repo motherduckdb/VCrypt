@@ -253,9 +253,6 @@ void DecryptFromEtypeNaive(Vector &input_vector, uint64_t size,
 
   // local state (contains key, buffer, iv etc.)
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
-  // global state
-  auto vcrypt_state = GetVCryptState(state);
-  // Get Key from Bind
   auto key = VCryptBasicFun::GetKey(state);
 
   using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
