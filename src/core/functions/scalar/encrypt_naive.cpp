@@ -208,6 +208,7 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
 
   // global, local and encryption state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
+  auto vcrypt_state = GetVCryptState(state);
   auto key = VCryptBasicFun::GetKey(state);
 
   // Reset the reference of the result vector
