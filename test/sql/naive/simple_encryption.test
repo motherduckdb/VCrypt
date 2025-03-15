@@ -11,50 +11,57 @@ Catalog Error: Scalar Function with name simple_encryption does not exist!
 # Require statement will ensure this test is run with this extension loaded
 require simple_encryption
 
-#INTEGER
-query I
-SELECT encrypt_naive(11, '0123456789112345');
-----
-1959677685
+statement ok
+CREATE SECRET key_1 (
+	TYPE VCRYPT,
+    TOKEN '0123456789112345',
+    LENGTH 16
+);
 
 #INTEGER
 query I
-SELECT decrypt_naive(1959677685, '0123456789112345');
+SELECT encrypt_naive(11, 'key_1');
+----
+{'nonce_hi': 1412771199, 'nonce_lo': 1791099447, 'value': -1821880768}
+
+#INTEGER
+query I
+SELECT decrypt_naive({'nonce_hi': 1412771199, 'nonce_lo': 1791099447, 'value': -1821880768}, 'key_1');
 ----
 11
 
 #BIGINT
 query I
-SELECT encrypt_naive(0123456789112345, '0123456789112345');
+SELECT encrypt_naive(0123456789112345, 'key_1');
 ----
 4095259532786215143
 
 #BIGINT
 query I
-SELECT decrypt_naive(4095259532786215143, '0123456789112345');
+SELECT decrypt_naive(4095259532786215143, 'key_1');
 ----
 0123456789112345
 
 #VARCHAR
 query I
-SELECT encrypt_naive('testtest', '0123456789112345');
+SELECT encrypt_naive('testtest', 'key_1');
 ----
 iiu9AORdpkw=
 
 #VARCHAR
 query I
-SELECT decrypt_naive('iiu9AORdpkw=', '0123456789112345');
+SELECT decrypt_naive('iiu9AORdpkw=', 'key_1');
 ----
 testtest
 
 #VARCHAR
 query I
-SELECT encrypt_naive('test', '0123456789112345');
+SELECT encrypt_naive('test', 'key_1');
 ----
 iiu9AA==
 
 #VARCHAR
 query I
-SELECT decrypt_naive('iiu9AA==', '0123456789112345');
+SELECT decrypt_naive('iiu9AA==', 'key_1');
 ----
 test

@@ -72,4 +72,4 @@ CREATE TABLE orders AS SELECT * FROM enc.orders;
 query I
 PRAGMA tpch(3)
 ----
-<FILE>:duckdb/extension/tpch/dbgen/answers/sf0.01/q03.csv
+<FILE>:test/sql/tpch/sf001/q03.csv
