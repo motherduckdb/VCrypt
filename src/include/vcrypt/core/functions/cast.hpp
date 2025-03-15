@@ -1,5 +1,5 @@
 #pragma once
-#include "simple_encryption/common.hpp"
+#include "vcrypt/common.hpp"
 
 namespace simple_encrypt {
 

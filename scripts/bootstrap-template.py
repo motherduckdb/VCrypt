@@ -58,9 +58,6 @@ if __name__ == "__main__":
             "Please enter the name of your extension in valid snake_case containing only lower case letters and numbers"
         )
 
-    shutil.copyfile("docs/NEXT_README.md", "README.md")
-    os.remove("docs/NEXT_README.md")
-    os.remove("docs/README.md")
 
     files_to_search = []
     files_to_search.extend(Path("./.github").rglob("./**/*.yml"))
@@ -75,7 +72,7 @@ if __name__ == "__main__":
     replace_everywhere("<extension_name>", name_extension)
 
     string_to_replace = name_extension
-    string_to_find = "simple_encryption"
+    string_to_find = "vcrypt"
 
     # rename files
     os.rename(f"test/sql/{string_to_find}.test", f"test/sql/{string_to_replace}.test")

@@ -1,15 +1,15 @@
-# name: test/sql/simple_encryption.test
-# description: test simple_encryption extension
-# group: [simple_encryption]
+# name: test/sql/vcrypt.test
+# description: test vcrypt extension
+# group: [vcrypt]
 
 # Before we load the extension, this will fail
 statement error
-SELECT simple_encryption('Test');
+SELECT vcrypt('Test');
 ----
-Catalog Error: Scalar Function with name simple_encryption does not exist!
+Catalog Error: Scalar Function with name vcrypt does not exist!
 
 # Require statement will ensure this test is run with this extension loaded
-require simple_encryption
+require vcrypt
 
 statement ok
 CREATE SECRET key_1 (

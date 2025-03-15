@@ -1,8 +1,8 @@
 #pragma once
-#include "simple_encryption/common.hpp"
+#include "vcrypt/common.hpp"
 #include "../etype/encrypted_type.hpp"
 
-namespace simple_encryption {
+namespace vcrypt {
 
 namespace core {
 
@@ -31,4 +31,4 @@ struct EncryptionTypes {
 };
 
 } // namespace core
-} // namespace simple_encryption
+} // namespace vcrypt

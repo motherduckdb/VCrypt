@@ -3,7 +3,7 @@
 #include <string>
 #include "duckdb/main/database.hpp"
 
-namespace simple_encryption {
+namespace vcrypt {
 
 namespace core {
 

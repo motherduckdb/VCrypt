@@ -1,11 +1,11 @@
-#include "simple_encryption/core/functions/function_data/encrypt_function_data.hpp"
-#include "simple_encryption/common.hpp"
-#include "simple_encryption/core/crypto/crypto_primitives.hpp"
+#include "vcrypt/core/functions/function_data/encrypt_function_data.hpp"
+#include "vcrypt/common.hpp"
+#include "vcrypt/core/crypto/crypto_primitives.hpp"
 #include <duckdb/function/function.hpp>
 #include "duckdb/common/helper.hpp"
 #include "duckdb/main/secret/secret_manager.hpp"
 
-namespace simple_encryption {
+namespace vcrypt {
 
 namespace core {
 
@@ -90,4 +90,4 @@ EncryptFunctionData::EncryptBind(ClientContext &context,
   return make_uniq<EncryptFunctionData>(context, key_name, value->return_type);
 }
 } // namespace core
-} // namespace simple_encryption
+} // namespace vcrypt

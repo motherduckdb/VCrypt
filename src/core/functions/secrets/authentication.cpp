@@ -1,8 +1,8 @@
-#include "simple_encryption/core/functions/secrets.hpp"
-#include "simple_encryption/common.hpp"
-#include "simple_encryption/core/utils/simple_encryption_utils.hpp"
-#include "simple_encryption/core/crypto/crypto_primitives.hpp"
-#include "simple_encryption/core/functions/scalar.hpp"
+#include "vcrypt/core/functions/secrets.hpp"
+#include "vcrypt/common.hpp"
+#include "vcrypt/core/utils/vcrypt_utils.hpp"
+#include "vcrypt/core/crypto/crypto_primitives.hpp"
+#include "vcrypt/core/functions/scalar.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/main/secret/secret.hpp"
 #include "duckdb/main/extension_util.hpp"
@@ -10,7 +10,7 @@
 #include <fstream>
 #include <cstdlib>
 
-namespace simple_encryption {
+namespace vcrypt {
 
 namespace core {
 

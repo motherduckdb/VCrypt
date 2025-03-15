@@ -1,14 +1,14 @@
 #pragma once
 
-#include "simple_encryption/common.hpp"
+#include "vcrypt/common.hpp"
 #include "duckdb/common/encryption_state.hpp"
-#include "simple_encryption/core/functions/function_data/encrypt_function_data.hpp"
+#include "vcrypt/core/functions/function_data/encrypt_function_data.hpp"
 
 #ifndef DUCKDB_AMALGAMATION
 #include "duckdb/storage/object_cache.hpp"
 #endif
 
-namespace simple_encryption {
+namespace vcrypt {
 
 namespace core {
 
@@ -29,4 +29,4 @@ private:
 };
 
 } // namespace core
-} // namespace simple_encryption
+} // namespace vcrypt

@@ -1,4 +1,4 @@
-#include "include/simple_encryption_state.hpp"
+#include "include/vcrypt_state.hpp"
 #include "duckdb.hpp"
 #include "mbedtls_wrapper.hpp"
 

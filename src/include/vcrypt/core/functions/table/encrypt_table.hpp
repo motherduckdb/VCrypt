@@ -1,10 +1,10 @@
 #pragma once
 
-#include "simple_encryption/common.hpp"
+#include "vcrypt/common.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 
-namespace simple_encryption {
+namespace vcrypt {
 namespace core {
 
 class CreateEncryptColumnFunction : public TableFunction {
@@ -16,4 +16,4 @@ public:
                                       DataChunk &output);
 };
 } // namespace core
-} // namespace simple_encryption
+} // namespace vcrypt

@@ -1,9 +1,9 @@
-#include "simple_encryption/common.hpp"
-#include "simple_encryption/core/functions/common.hpp"
+#include "vcrypt/common.hpp"
+#include "vcrypt/core/functions/common.hpp"
 
 // Code adapted from spatial extension
 
-namespace simple_encryption {
+namespace vcrypt {
 
 namespace core {
 
@@ -97,4 +97,4 @@ const void VCryptFunctionLocalState::IncrementIV(uint32_t increment) {
 
 } // namespace core
 
-} // namespace simple_encryption
+} // namespace vcrypt

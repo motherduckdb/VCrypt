@@ -1,9 +1,9 @@
 # name: test/sql/encrypt_column.test
-# description: test simple_encryption extension
-# group: [simple_encryption]
+# description: test vcrypt extension
+# group: [vcrypt]
 
 # Require statement will ensure this test is run with this extension loaded
-require simple_encryption
+require vcrypt
 
 statement ok
 CREATE TABLE test_1 AS SELECT 1 AS value FROM range(10);

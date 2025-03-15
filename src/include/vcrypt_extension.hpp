@@ -4,7 +4,7 @@
 
 namespace duckdb {
 
-class SimpleEncryptionExtension : public Extension {
+class VcryptExtension : public Extension {
 public:
   void Load(DuckDB &db) override;
   std::string Name() override;

@@ -1,8 +1,8 @@
 #pragma once
 #include "duckdb.hpp"
-#include "simple_encryption/common.hpp"
+#include "vcrypt/common.hpp"
 
-namespace simple_encryption {
+namespace vcrypt {
 
 namespace core {
 
@@ -17,4 +17,4 @@ private:
 
 } // namespace core
 
-} // namespace simple_encryption
+} // namespace vcrypt

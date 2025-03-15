@@ -1,10 +1,10 @@
-#include "simple_encryption/core/module.hpp"
-#include "simple_encryption/common.hpp"
-#include "simple_encryption/core/functions/scalar.hpp"
-#include "simple_encryption/core/functions/secrets.hpp"
-#include "simple_encryption/core/types.hpp"
+#include "vcrypt/core/module.hpp"
+#include "vcrypt/common.hpp"
+#include "vcrypt/core/functions/scalar.hpp"
+#include "vcrypt/core/functions/secrets.hpp"
+#include "vcrypt/core/types.hpp"
 
-namespace simple_encryption {
+namespace vcrypt {
 namespace core {
 
 void CoreModule::Register(DatabaseInstance &db) {
@@ -16,4 +16,4 @@ void CoreModule::RegisterType(DatabaseInstance &db) {
   EncryptionTypes::Register(db);
 }
 } // namespace core
-} // namespace simple_encryption
+} // namespace vcrypt

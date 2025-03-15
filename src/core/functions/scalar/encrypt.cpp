@@ -18,12 +18,12 @@
 #include "duckdb/common/encryption_state.hpp"
 #include "duckdb/main/client_context.hpp"
 
-#include "simple_encryption_state.hpp"
-#include "simple_encryption/core/functions/scalar.hpp"
-#include "simple_encryption/core/functions/scalar/encrypt.hpp"
+#include "vcrypt_state.hpp"
+#include "vcrypt/core/functions/scalar.hpp"
+#include "vcrypt/core/functions/scalar/encrypt.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 
-namespace simple_encryption {
+namespace vcrypt {
 namespace core {
 
 EncryptFunctionData& VCryptBasicFun::GetEncryptionBindInfo(ExpressionState &state) {
@@ -35,7 +35,7 @@ shared_ptr<VCryptState>
 VCryptBasicFun::GetVCryptState(ExpressionState &state) {
   auto &info = VCryptBasicFun::GetEncryptionBindInfo(state);
   return info.context.registered_state->Get<VCryptState>(
-      "simple_encryption");
+      "vcrypt");
 }
 // TODO; maybe pass by reference or so
 string* VCryptBasicFun::GetKey(ExpressionState &state) {
@@ -311,4 +311,4 @@ void CoreScalarFunctions::RegisterEncryptDataScalarFunction(
   ExtensionUtil::RegisterFunction(db, GetDecryptionFunction());
 }
 } // namespace core
-} // namespace simple_encryption
+} // namespace vcrypt
