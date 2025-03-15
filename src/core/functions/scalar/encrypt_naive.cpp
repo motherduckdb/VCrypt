@@ -208,9 +208,6 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
 
   // global, local and encryption state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
-  auto vcrypt_state = GetVCryptState(state);
-
-  // Get Key from Bind
   auto key = VCryptBasicFun::GetKey(state);
 
   // Reset the reference of the result vector
@@ -255,9 +252,6 @@ void DecryptFromEtypeNaive(Vector &input_vector, uint64_t size,
 
   // local state (contains key, buffer, iv etc.)
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
-  // global state
-  auto vcrypt_state = GetVCryptState(state);
-  // Get Key from Bind
   auto key = VCryptBasicFun::GetKey(state);
 
   using ENCRYPTED_TYPE = StructTypeTernary<uint64_t, uint64_t, T>;
