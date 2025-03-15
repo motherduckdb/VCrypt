@@ -2,7 +2,7 @@
 # description: Test vectorized encrypt and decrypt scalar function
 # group: [simple-encryption/vectorized]
 
-require simple_encryption
+require vcrypt
 
 # Ensure any currently stored secrets don't interfere with the test
 statement ok

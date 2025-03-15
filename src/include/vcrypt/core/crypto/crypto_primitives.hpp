@@ -47,7 +47,7 @@ private:
 
 } // namespace duckdb
 
-namespace simple_encryption {
+namespace vcrypt {
 namespace core {
 
 std::string CalculateHMAC(const std::string &secret, const std::string &message, uint32_t length);

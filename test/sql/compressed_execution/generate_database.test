@@ -1,7 +1,7 @@
 statement ok
 set allow_persistent_secrets=false;
 
-require simple_encryption
+require vcrypt
 
 require tpch
 

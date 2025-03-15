@@ -1,8 +1,8 @@
 #pragma once
 
-#include "simple_encryption/common.hpp"
+#include "vcrypt/common.hpp"
 
-namespace simple_encryption {
+namespace vcrypt {
 namespace core {
 
 struct CoreModule {
@@ -13,4 +13,4 @@ public:
 };
 
 } // namespace core
-} // namespace simple_encryption
+} // namespace vcrypt

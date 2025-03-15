@@ -2,7 +2,7 @@
 # description: Test encryption and decryption of strings
 # group: [simple-encryption/encryption]
 
-require simple_encryption
+require vcrypt
 
 # Ensure any currently stored secrets don't interfere with the test
 statement ok

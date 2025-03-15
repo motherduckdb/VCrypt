@@ -1,15 +1,15 @@
 #pragma once
 
-#include "simple_encryption/common.hpp"
+#include "vcrypt/common.hpp"
 #include "duckdb/planner/extension_callback.hpp"
-#include "simple_encryption_state.hpp"
+#include "vcrypt_state.hpp"
 
 namespace duckdb {
 
-class SimpleEncryptionExtensionCallback : public ExtensionCallback {
+class VCryptExtensionCallback : public ExtensionCallback {
   void OnConnectionOpened(ClientContext &context) override {
     context.registered_state->Insert(
-        "simple_encryption",
+        "vcrypt",
         make_shared_ptr<VCryptState>(context.shared_from_this()));
   }
 };

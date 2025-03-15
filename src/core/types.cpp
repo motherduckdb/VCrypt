@@ -1,8 +1,8 @@
-#include "simple_encryption/core/types.hpp"
-#include "simple_encryption/common.hpp"
+#include "vcrypt/core/types.hpp"
+#include "vcrypt/common.hpp"
 #include "duckdb/common/extension_type_info.hpp"
 
-namespace simple_encryption {
+namespace vcrypt {
 
 namespace core {
 
@@ -226,4 +226,4 @@ void EncryptionTypes::Register(DatabaseInstance &db) {
 
 } // namespace core
 
-} // namespace simple_encryption
+} // namespace vcrypt

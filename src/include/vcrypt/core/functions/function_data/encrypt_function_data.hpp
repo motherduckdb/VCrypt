@@ -1,13 +1,13 @@
 #pragma once
 
-#include "simple_encryption/common.hpp"
+#include "vcrypt/common.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/common/types.hpp"
 #include "mbedtls_wrapper.hpp"
 
 #define BATCH_SIZE 128
 
-namespace simple_encryption {
+namespace vcrypt {
 namespace core {
 
 struct EncryptFunctionData : FunctionData {
@@ -47,4 +47,4 @@ struct EncryptFunctionData : FunctionData {
 };
 
 } // namespace core
-} // namespace simple_encryption
+} // namespace vcrypt

@@ -2,7 +2,7 @@
 # description: Test novel user defined type
 # group: [simple-encryption/vectorized]
 
-require simple_encryption
+require vcrypt
 
 # Ensure any currently stored secrets don't interfere with the test
 statement ok

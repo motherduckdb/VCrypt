@@ -16,16 +16,16 @@
 
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
-#include "simple_encryption_state.hpp"
-#include "simple_encryption/core/types.hpp"
-#include "simple_encryption/core/crypto/crypto_primitives.hpp"
-#include "simple_encryption/core/functions/common.hpp"
-#include "simple_encryption/core/functions/scalar.hpp"
-#include "simple_encryption/core/functions/secrets.hpp"
-#include "simple_encryption/core/functions/scalar/encrypt.hpp"
-#include "simple_encryption/core/functions/function_data/encrypt_function_data.hpp"
+#include "vcrypt_state.hpp"
+#include "vcrypt/core/types.hpp"
+#include "vcrypt/core/crypto/crypto_primitives.hpp"
+#include "vcrypt/core/functions/common.hpp"
+#include "vcrypt/core/functions/scalar.hpp"
+#include "vcrypt/core/functions/secrets.hpp"
+#include "vcrypt/core/functions/scalar/encrypt.hpp"
+#include "vcrypt/core/functions/function_data/encrypt_function_data.hpp"
 
-namespace simple_encryption {
+namespace vcrypt {
 
 namespace core {
 
@@ -160,11 +160,11 @@ EncryptFunctionData &GetEncryptionBindInfo(ExpressionState &state) {
 }
 
 shared_ptr<VCryptState>
-GetSimpleEncryptionState(ExpressionState &state) {
+GetVCryptState(ExpressionState &state) {
 
   auto &info = GetEncryptionBindInfo(state);
   return info.context.registered_state->Get<VCryptState>(
-      "simple_encryption");
+      "vcrypt");
 }
 
 bool HasSpace(shared_ptr<VCryptState> vcrypt_state,
@@ -208,7 +208,7 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
 
   // global, local and encryption state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
-  auto vcrypt_state = GetSimpleEncryptionState(state);
+  auto vcrypt_state = GetVCryptState(state);
 
   // Get Key from Bind
   auto key = VCryptBasicFun::GetKey(state);
@@ -256,7 +256,7 @@ void DecryptFromEtypeNaive(Vector &input_vector, uint64_t size,
   // local state (contains key, buffer, iv etc.)
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
   // global state
-  auto vcrypt_state = GetSimpleEncryptionState(state);
+  auto vcrypt_state = GetVCryptState(state);
   // Get Key from Bind
   auto key = VCryptBasicFun::GetKey(state);
 
@@ -430,4 +430,4 @@ void CoreScalarFunctions::RegisterEncryptDataStructScalarFunction(
   ExtensionUtil::RegisterFunction(db, GetDecryptionStructFunction());
 }
 } // namespace core
-} // namespace simple_encryption
+} // namespace vcrypt

@@ -1,6 +1,6 @@
-# name: test/sql/simple_encryption.test
-# description: test simple_encryption extension
-# group: [simple_encryption]
+# name: test/sql/vcrypt.test
+# description: test vcrypt extension
+# group: [vcrypt]
 
 # Before we load the extension, this will fail
 statement ok

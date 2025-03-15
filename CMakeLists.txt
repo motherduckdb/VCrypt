@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
 
 # Set extension name here
-set(TARGET_NAME simple_encryption)
+set(TARGET_NAME vcrypt)
 set(CMAKE_CXX_STANDARD 11)
 
 # DuckDB's extension distribution supports vcpkg. As such, dependencies can be
@@ -20,9 +20,9 @@ include_directories(../duckdb/third_party/httplib/include)
 
 # by now do this manually, later fix this
 set(EXTENSION_SOURCES
-    src/simple_encryption_extension.cpp
-    src/simple_encryption_extension.cpp
-    src/simple_encryption_state.cpp
+    src/vcrypt_extension.cpp
+    src/vcrypt_extension.cpp
+    src/vcrypt_state.cpp
     src/etype/etype_serialization.cpp
     src/core/module.cpp
     src/core/types.cpp
@@ -36,7 +36,7 @@ set(EXTENSION_SOURCES
     src/core/functions/table/encrypt_table.cpp
     src/core/functions/table/kms/kms.cpp
     src/core/functions/secrets/authentication.cpp
-    src/core/utils/simple_encryption_utils.cpp
+    src/core/utils/vcrypt_utils.cpp
     src/core/crypto/crypto_primitives.cpp
     src/core/functions/common.cpp)
 

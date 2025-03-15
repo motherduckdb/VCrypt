@@ -1,4 +1,4 @@
-#include "simple_encryption/core/crypto/crypto_primitives.hpp"
+#include "vcrypt/core/crypto/crypto_primitives.hpp"
 #include "mbedtls_wrapper.hpp"
 #include <iostream>
 #include "duckdb/common/common.hpp"
@@ -128,11 +128,9 @@ size_t AESStateSSL::Process(const_data_ptr_t in, idx_t in_len, data_ptr_t out,
 #ifdef DEBUG
   uint32_t iv_len = GetCurrentIVLength();
   uint32_t iv_buf[4];
-#endif
-
   D_ASSERT(iv_len == 16);
-
   GetCurrentIV(iv_buf, iv_len);
+#endif
 
   switch (mode) {
   case ENCRYPT:
@@ -216,7 +214,7 @@ DUCKDB_EXTENSION_API AESStateSSLFactory *CreateSSLFactory() {
 };
 }
 
-namespace simple_encryption {
+namespace vcrypt {
 
 namespace core {
 

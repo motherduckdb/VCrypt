@@ -2,7 +2,7 @@
 # description: Test secret creation for internal encryption
 # group: [simple-encryption/secrets]
 
-require simple_encryption
+require vcrypt
 
 # Ensure any currently stored secrets don't interfere with the test
 statement ok

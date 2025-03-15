@@ -16,14 +16,14 @@
 
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
-#include "simple_encryption_state.hpp"
-#include "simple_encryption/core/functions/common.hpp"
-#include "simple_encryption/core/functions/scalar.hpp"
-#include "simple_encryption/core/functions/secrets.hpp"
-#include "simple_encryption/core/functions/scalar/encrypt.hpp"
-#include "simple_encryption/core/functions/function_data/encrypt_function_data.hpp"
+#include "vcrypt_state.hpp"
+#include "vcrypt/core/functions/common.hpp"
+#include "vcrypt/core/functions/scalar.hpp"
+#include "vcrypt/core/functions/secrets.hpp"
+#include "vcrypt/core/functions/scalar/encrypt.hpp"
+#include "vcrypt/core/functions/function_data/encrypt_function_data.hpp"
 
-namespace simple_encryption {
+namespace vcrypt {
 
 namespace core {
 
@@ -98,4 +98,4 @@ void CoreScalarFunctions::RegisterGenerateKeyFunction(
 }
 
 } // namespace core
-} // namespace simple_encryption
+} // namespace vcrypt

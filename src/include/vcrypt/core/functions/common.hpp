@@ -1,10 +1,10 @@
 #pragma once
-#include "simple_encryption/common.hpp"
-#include "simple_encryption/core/functions/function_data/encrypt_function_data.hpp"
+#include "vcrypt/common.hpp"
+#include "vcrypt/core/functions/function_data/encrypt_function_data.hpp"
 
 #define BATCH_SIZE 128
 
-namespace simple_encryption {
+namespace vcrypt {
 
 namespace core {
 
@@ -66,4 +66,4 @@ public:
 
 } // namespace core
 
-} // namespace simple_encryption
+} // namespace vcrypt
