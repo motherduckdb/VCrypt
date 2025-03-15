@@ -1,0 +1,52 @@
+# name: test/sql/compressed_execution/storage_string_corr.test
+# description: Test compressed dict execution for VCrypt from storage
+# group: [simple-encryption]
+
+statement ok
+PRAGMA enable_verification;
+
+statement ok
+set allow_persistent_secrets=false;
+
+require simple_encryption
+
+require tpch
+
+# load the DB from disk
+statement ok
+ATTACH 'enc_orders_sf001.db' AS enc;
+
+# re-add key upon loading the DB again
+statement ok
+CREATE SECRET key_2 (
+    TYPE VCRYPT,
+    TOKEN 'ABCDEFGHIJKLMNOP',
+    LENGTH 16
+);
+
+statement ok
+ALTER TABLE enc.encrypted_orders DROP COLUMN IF EXISTS d_o_orderpriority;
+
+statement ok
+ALTER TABLE enc.encrypted_orders ADD COLUMN d_o_orderpriority VARCHAR;
+
+statement ok
+UPDATE enc.encrypted_orders SET d_o_orderpriority = decrypt(o_orderpriority, 'key_2');
+
+statement ok
+SELECT * FROM enc.encrypted_orders;
+
+#query I
+#SELECT MIN(d_l_orderkey) FROM enc.encrypted_lineitem;
+#----
+#1
+#
+#query I
+#SELECT MAX(d_l_orderkey) FROM enc.encrypted_lineitem;
+#----
+#60000
+#
+#query I
+#SELECT SUM(d_l_orderkey) FROM enc.encrypted_lineitem;
+#----
+#1802759573
