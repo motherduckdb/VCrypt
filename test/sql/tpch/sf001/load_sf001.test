@@ -13,7 +13,7 @@ require tpch
 
 # load the DB from disk
 statement ok
-ATTACH 'lorderkey_tpch_sf001.db' AS enc;
+ATTACH 'lorderkey_tpch_sf001_allint.db' AS enc;
 
 statement ok
 CALL dbgen(sf=0.01);

@@ -1,8 +1,9 @@
-# name: test/sql/tpch/q3.test
-# description: Test VCRYPT encryption with OpenSSL for TPC-H
+# name: test/sql/tpch/sf001/all_queries.test_slow
+# description: Test all TPC-H queries for VCRYPT
 # group: [vcrypt]
 
 # Ensure any currently stored secrets don't interfere with the test
+
 statement ok
 set allow_persistent_secrets=false;
 
@@ -64,12 +65,20 @@ CREATE TABLE partsupp AS SELECT * FROM enc.partsupp;
 statement ok
 CREATE TABLE orders AS SELECT * FROM enc.orders;
 
-#statement error
-#PRAGMA tpch(3)
-#----
-#Not implemented Error: Did not implement in-query dictionary vector decryption
+loop i 1 9
 
 query I
-PRAGMA tpch(3)
+PRAGMA tpch(${i})
 ----
-<FILE>:duckdb/extension/tpch/dbgen/answers/sf0.01/q03.csv
+<FILE>:duckdb/extension/tpch/dbgen/answers/sf0.01/q0${i}.csv
+
+endloop
+
+loop i 10 23
+
+query I
+PRAGMA tpch(${i})
+----
+<FILE>:duckdb/extension/tpch/dbgen/answers/sf0.01/q${i}.csv
+
+endloop

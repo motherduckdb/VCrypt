@@ -48,9 +48,6 @@ uint16_t UnMaskCipher(uint16_t cipher, uint64_t *plaintext_bytes) {
   return cipher;
 }
 
-// FIX this tomorrow; check only the flat-vector nonce.
-// Then the bug should be fixed
-// Then after that, work on the dictionary compressed other stuff
 bool CheckNonceIndividual(uint64_t *nonce_data, uint64_t size) {
   auto nonce_val = nonce_data[0];
   idx_t index = 0;
@@ -74,29 +71,18 @@ bool CheckNonce(uint64_t *nonce_hi_data, uint64_t *nonce_lo_data, uint64_t size)
   return CheckNonceIndividual(nonce_hi_data, size) && CheckNonceIndividual(nonce_lo_data, size);
 }
 
-bool CheckSequenceInDict(SelectionVector &dict_sel_value, uint64_t size) {
-  idx_t child_idx;
-  idx_t prev_idx = dict_sel_value.get_index(0);
-  uint16_t count = 0;
-
-  for (idx_t i = 0; i < size; i++) {
-    if (!count) {
-      prev_idx = dict_sel_value.get_index(i);
-    }
-    child_idx = dict_sel_value.get_index(i);
-
-    if (child_idx != prev_idx) {
-      // not all values are in the same batch
-      return false;
-    }
-    count++;
-
-    if (count == BATCH_SIZE) {
-      count = 0;
-    }
+inline void CacheAndSetNonce(VCryptFunctionLocalState &lstate, uint64_t nonce_hi, uint64_t nonce_lo) {
+  if (lstate.nonce_hi == nonce_hi && lstate.nonce_lo == nonce_lo) {
+    return;
   }
-  return true;
+  lstate.nonce_hi = nonce_hi;
+  lstate.nonce_lo = nonce_lo;
+
+  lstate.iv[0] = static_cast<uint32_t>(nonce_hi >> 32);
+  lstate.iv[1] = static_cast<uint32_t>(nonce_hi & 0xFFFFFFFF);
+  lstate.iv[2] = static_cast<uint32_t>(nonce_lo);
 }
+
 
 template <typename T>
 void DecryptSingleValue(uint32_t counter_value, uint16_t cipher_value,
@@ -132,39 +118,9 @@ void DecryptSingleValue(uint32_t counter_value, uint16_t cipher_value,
     // Get position from cipher
     uint16_t position = UnMaskCipher(cipher_value, &plaintext_bytes);
 #endif
+
   // Load data into result vector
   result_data[index] = Load<T>(base_ptr + (cipher_value * sizeof(T)));
-}
-
-template <typename T>
-void DecryptPerValue(uint64_t *nonce_hi_data, uint64_t *nonce_lo_data,
-                     uint32_t *counter_vec_data, uint16_t *cipher_vec_data,
-                     string_t *value_vec_data, uint64_t size, T *result_data,
-                     VCryptFunctionLocalState &lstate,
-                     shared_ptr<EncryptionState> &encryption_state,
-                     const string &key, bool same_nonce) {
-
-  // create cache here if counter is similar
-  // decrypt every value in the vector separately
-
-  for (uint32_t i = 0; i < size; i++) {
-    // todo; optimize
-    if (!same_nonce) {
-      if (!(lstate.nonce_hi == nonce_hi_data[i] &&
-            lstate.nonce_lo == nonce_lo_data[i])) {
-        lstate.nonce_hi = nonce_hi_data[i];
-        lstate.nonce_lo = nonce_lo_data[i];
-
-        // assign the right parts of the nonce and counter to iv
-        lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[i] >> 32);
-        lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[i] & 0xFFFFFFFF);
-        lstate.iv[2] = static_cast<uint32_t>(nonce_lo_data[i]);
-      }
-    }
-
-    DecryptSingleValue<T>(counter_vec_data[i], cipher_vec_data[i],
-                          value_vec_data[i], result_data, lstate, key, i);
-  }
 }
 
 template <typename T>
@@ -227,143 +183,18 @@ void DecryptPerValueVariable(uint64_t *nonce_hi_data, uint64_t *nonce_lo_data,
 }
 
 template <typename T>
-void DecryptAllBatchesVectorized(VCryptFunctionLocalState &lstate, uint32_t *counter_vec_data,
-                                 string_t *value_vec_data, T *result_data, uint64_t size,
-                                 const string *key, SelectionVector *sel = nullptr) {
-
-  uint32_t batch_size = BATCH_SIZE;
-
-  if (size < BATCH_SIZE) {
-    batch_size = size;
-  }
-  uint32_t batch_size_in_bytes = sizeof(T) * batch_size;
-  uint64_t total_batches = (size + batch_size - 1) / batch_size;
-  auto to_process_total = size;
-  to_process_total = size;
-
-  // case; if values in vector < standard batch size
-  if (to_process_total < BATCH_SIZE) {
-    batch_size = to_process_total;
-  }
-
-  // decrypt each block independently (pointers are not always aligned)
-  idx_t base_idx = 0;
-  idx_t dict_idx = 0;
-  auto to_process_batch = size;
-
-  for (uint32_t batch = 0; batch < total_batches; batch++) {
-  lstate.ResetIV<T>(counter_vec_data[base_idx]);
-  // initialize encryption state
-  lstate.encryption_state->InitializeDecryption(
-    reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
-    reinterpret_cast<const string *>(key));
-
-  if (sel){
-    dict_idx = sel->get_index(base_idx);
-  } else {
-    dict_idx = base_idx;
-  }
-
-  lstate.encryption_state->Process(
-    reinterpret_cast<const_data_ptr_t>(value_vec_data[dict_idx].GetData()),
-    batch_size_in_bytes,
-    reinterpret_cast<unsigned char *>(result_data + base_idx),
-    batch_size_in_bytes);
-
-  base_idx += batch_size;
-
-  // todo: optimize
-  if (to_process_batch > batch_size) {
-    to_process_batch -= batch_size;
-  } else {
-    to_process_batch = 0;
-  break;
-  }
-
-  if (to_process_batch < batch_size) {
-    batch_size = to_process_batch;
-    batch_size_in_bytes = to_process_batch * sizeof(T);
-  }
-  }
-  lstate.batch_nr += total_batches;
-}
-
-template <typename T>
-void DecryptCompressedExecution(Vector &input_vector, uint64_t size,
-                                ExpressionState &state, Vector &result) {
-
-  ValidityMask &result_validity = FlatVector::Validity(result);
-  result.SetVectorType(VectorType::FLAT_VECTOR);
-  T *result_data = FlatVector::GetData<T>(result);
-
-  // local, vcrypt (global) and encryption state
-  auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
-  ;
-  auto vcrypt_state = VCryptBasicFun::GetVCryptState(state);
-  auto key = VCryptBasicFun::GetKey(state);
-  lstate.index = 0;
-
-  D_ASSERT(input_vector.GetType().id() == LogicalTypeId::STRUCT);
-
-  auto &children = StructVector::GetEntries(input_vector);
-  auto &nonce_hi = children[0];
-  auto &nonce_lo = children[1];
-  auto &counter_vec = children[2];
-  auto &cipher_vec = children[3];
-  auto &value_vec = children[4];
-
-  D_ASSERT(value_vec->GetType() == LogicalTypeId::BLOB);
-
-  UnifiedVectorFormat counter_vec_u;
-  UnifiedVectorFormat cipher_vec_u;
-  counter_vec->ToUnifiedFormat(size, counter_vec_u);
-  cipher_vec->ToUnifiedFormat(size, cipher_vec_u);
-  auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
-  auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
-
-  auto nonce_hi_value = FlatVector::GetData<uint64_t>(*nonce_hi)[0];
-  auto nonce_lo_value = FlatVector::GetData<uint64_t>(*nonce_lo)[0];
-
-  lstate.iv[0] = static_cast<uint32_t>(nonce_hi_value >> 32);
-  lstate.iv[1] = static_cast<uint32_t>(nonce_hi_value & 0xFFFFFFFF);
-  lstate.iv[2] = nonce_lo_value;
-
-  // flatten the dictionary vector
-  Vector &value_vec_dict = DictionaryVector::Child(*value_vec);
-  UnifiedVectorFormat value_vec_dict_u;
-  value_vec_dict.ToUnifiedFormat(size, value_vec_dict_u);
-  auto value_vec_dict_data = FlatVector::GetData<string_t>(value_vec_dict);
-
-  // check if the selection vector is sequential
-  SelectionVector &sel = DictionaryVector::SelVector(*value_vec);
-  if (!CheckSequenceInDict(sel, size)) {
-    // does this even occur?
-    // go to caching last decrypted ciphertext implementation?
-    // also, we ideally need to check if the cipher is correct...
-    throw NotImplementedException("Nonce is constant, compressed execution, but no Sequential Dictionary");
-  }
-
-  DecryptAllBatchesVectorized<T>(lstate, counter_vec_data, value_vec_dict_data, result_data, size, key, &sel);
-
-}
-
-template <typename T>
 void DecryptFromEtype(Vector &input_vector, uint64_t size,
                       ExpressionState &state, Vector &result) {
 
-  // todo; cache decrypted texts
-  // TODO: check validity when storing decrypted values
+  D_ASSERT(input_vector.GetType().id() == LogicalTypeId::STRUCT);
   ValidityMask &result_validity = FlatVector::Validity(result);
   result.SetVectorType(VectorType::FLAT_VECTOR);
   auto result_data = FlatVector::GetData<T>(result);
-  idx_t src_index;
 
   // local, vcrypt (global) and encryption state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
   auto vcrypt_state = VCryptBasicFun::GetVCryptState(state);
   auto key = VCryptBasicFun::GetKey(state);
-
-  D_ASSERT(input_vector.GetType().id() == LogicalTypeId::STRUCT);
 
   auto &children = StructVector::GetEntries(input_vector);
   auto &nonce_hi = children[0];
@@ -376,15 +207,21 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
   UnifiedVectorFormat nonce_lo_u;
   UnifiedVectorFormat counter_vec_u;
   UnifiedVectorFormat cipher_vec_u;
+  UnifiedVectorFormat value_vec_u;
 
   nonce_hi->ToUnifiedFormat(size, nonce_hi_u);
   nonce_lo->ToUnifiedFormat(size, nonce_lo_u);
   counter_vec->ToUnifiedFormat(size, counter_vec_u);
   cipher_vec->ToUnifiedFormat(size, cipher_vec_u);
-  auto nonce_hi_data = (uint64_t *)nonce_hi_u.data;
-  auto nonce_lo_data = (uint64_t *)nonce_lo_u.data;
+  value_vec->ToUnifiedFormat(size, value_vec_u);
 
-  // -------- Check Nonce Similarity --------
+  auto nonce_hi_data = UnifiedVectorFormat::GetData<uint64_t>(nonce_hi_u);
+  auto nonce_lo_data = UnifiedVectorFormat::GetData<uint64_t>(nonce_lo_u);
+  auto ctr_data = UnifiedVectorFormat::GetData<uint32_t>(counter_vec_u);
+  auto cpr_data = UnifiedVectorFormat::GetData<uint16_t>(cipher_vec_u);
+  auto val_data = UnifiedVectorFormat::GetData<string_t>(value_vec_u);
+
+  // -------- Set and Check Nonce Similarity --------
 
   bool same_nonce = true;
   idx_t hi_idx = nonce_hi_u.sel->get_index(0);
@@ -392,11 +229,10 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
 
   lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[hi_idx] >> 32);
   lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[hi_idx] & 0xFFFFFFFF);
-  lstate.iv[2] = static_cast<uint32_t>(nonce_lo_data[lo_idx]);
+  lstate.iv[2] = nonce_lo_data[lo_idx];
 
   if (!(nonce_hi->GetVectorType() == VectorType::CONSTANT_VECTOR &&
       nonce_lo->GetVectorType() == VectorType::CONSTANT_VECTOR)) {
-
     uint64_t nonce_hi_val = nonce_hi_data[hi_idx];
     uint64_t nonce_lo_val = nonce_lo_data[lo_idx];
 
@@ -404,38 +240,30 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
       if (!result_validity.RowIsValid(i)) {
         continue;
       }
-
       hi_idx = nonce_hi_u.sel->get_index(i);
       lo_idx = nonce_lo_u.sel->get_index(i);
 
       if (nonce_hi_data[hi_idx] != nonce_hi_val ||
           nonce_lo_data[lo_idx] != nonce_lo_val) {
-
         same_nonce = false;
         break;
       }
     }
   }
 
-  // ---------- If the nonce is the same, we check whether the counter and values are ------
+  // ---------- We can check whether ctr and cpr are increasing ----------
 
-  //  we can decrypt en put everything in 1 go, IF;
+  //  TODO; we can decrypt en put everything in 1 go, IF;
   // the counter is 128x the same for the whole vector
   // the cipher is increasing
   // the selection vector in the dict is sequential (128 x the same in the sel vec) the cipher is increasing from 0 to 127
 
-  UnifiedVectorFormat value_vec_u;
-  value_vec->ToUnifiedFormat(size, value_vec_u);
+  // ---------- Decrypt Fixed Sized Data ----------
 
   uint32_t ctr;
   uint16_t cpr;
   string_t val;
 
-  auto ctr_data = (uint32_t *)counter_vec_u.data;
-  auto cpr_data = (uint16_t *)cipher_vec_u.data;
-  auto val_data = (string_t *)value_vec_u.data;
-
-  // loop through the vector
   for (uint32_t i = 0; i < size; i++) {
     if (!result_validity.RowIsValid(i)) {
       continue;
@@ -443,185 +271,65 @@ void DecryptFromEtype(Vector &input_vector, uint64_t size,
 
     ctr = ctr_data[counter_vec_u.sel->get_index(i)];
     cpr = cpr_data[cipher_vec_u.sel->get_index(i)];
-    D_ASSERT(cpr < BATCH_SIZE);
     val = val_data[value_vec_u.sel->get_index(i)];
 
     if (ctr == lstate.counter && (memcmp(lstate.prefix, val.GetPrefix(), 4) == 0) && same_nonce) {
-
-#ifdef DEBUG
-      auto loaded_val = Load<T>(lstate.buffer_p + (cpr * sizeof(T)));
-#endif
-
       result_data[i] = Load<T>(lstate.buffer_p + (cpr * sizeof(T)));
       continue;
     }
 
     if (!same_nonce) {
-      // make this a separate function
-      if (!(lstate.nonce_hi == nonce_hi_data[i] &&
-            lstate.nonce_lo == nonce_lo_data[i])) {
-        lstate.nonce_hi = nonce_hi_data[i];
-        lstate.nonce_lo = nonce_lo_data[i];
-
-        // assign the right parts of the nonce and counter to iv
-        lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[i] >> 32);
-        lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[i] & 0xFFFFFFFF);
-        lstate.iv[2] = static_cast<uint32_t>(nonce_lo_data[i]);
-      }
+      CacheAndSetNonce(lstate, nonce_hi_data[i], nonce_lo_data[i]);
     }
 
     memcpy(lstate.prefix, val.GetPrefix(), 4);
     lstate.counter = ctr;
     DecryptSingleValue<T>(ctr, cpr, val, result_data, lstate, *key, i);
   }
-
-#if 0
-
-  D_ASSERT(value_vec->GetType() == LogicalTypeId::BLOB);
-
-  // assign the right parts of the nonce and counter to iv
-  lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[0] >> 32);
-  lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[0] & 0xFFFFFFFF);
-  lstate.iv[2] = nonce_lo_data[0];
-
-  if (value_vec->GetVectorType() == VectorType::DICTIONARY_VECTOR && same_nonce) {
-      // todo; maybe already set the nonce here?
-      // to do, cleanup nonce code in understaande functie
-      DecryptCompressedExecution<T>(input_vector, size, state, result);
-      return;
-    } else if (value_vec->GetVectorType() == VectorType::DICTIONARY_VECTOR) {
-      // go to a dict implementation for selection vectors in a query
-      // this is still to do
-      throw NotImplementedException("Dictionary Vector in-query implementation is missing");
-    } else if (same_nonce) {
-
-      // ---------- flattened in memory decryption -----------
-
-      UnifiedVectorFormat value_vec_u;
-      value_vec->ToUnifiedFormat(size, value_vec_u);
-      auto value_vec_data = FlatVector::GetData<string_t>(*value_vec);
-
-      auto to_process_total = size;
-      auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
-      auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
-
-      uint32_t batch_size = BATCH_SIZE;
-      uint32_t batch_size_in_bytes = sizeof(T) * batch_size;
-      uint64_t total_batches = (size + batch_size - 1) / batch_size;
-      idx_t current_index = 0;
-
-      for (uint32_t i = 0; i < total_batches; i++) {
-        for (idx_t j = 0; j < batch_size; j++) {
-          if (counter_vec_data[current_index] ==
-              counter_vec_data[current_index + j]) {
-            continue;
-          }
-
-          DecryptPerValue<T>(nonce_hi_data, nonce_lo_data, counter_vec_data,
-                             cipher_vec_data, value_vec_data, size, result_data,
-                             lstate, lstate.encryption_state, *key, same_nonce);
-          return;
-        }
-
-        current_index += batch_size;
-      }
-
-      DecryptAllBatchesVectorized<T>(lstate, counter_vec_data, value_vec_data, result_data, size, key);
-    } else {
-
-      UnifiedVectorFormat value_vec_u;
-      value_vec->ToUnifiedFormat(size, value_vec_u);
-      auto value_vec_data = FlatVector::GetData<string_t>(*value_vec);
-
-      auto to_process_total = size;
-      auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
-      auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
-
-      if (nonce_hi->GetVectorType() == VectorType::CONSTANT_VECTOR) {
-        same_nonce = CheckNonceIndividual(nonce_lo_data, size);
-      } else if (nonce_lo->GetVectorType() == VectorType::CONSTANT_VECTOR) {
-        same_nonce = CheckNonceIndividual(nonce_hi_data, size);
-      } else {
-        same_nonce = CheckNonce(nonce_hi_data, nonce_lo_data, size);
-        DecryptPerValue<T>(nonce_hi_data, nonce_lo_data, counter_vec_data,
-                           cipher_vec_data, value_vec_data, size, result_data,
-                           lstate, lstate.encryption_state, *key, same_nonce);
-        return;
-      }
-
-      uint32_t batch_size = BATCH_SIZE;
-      uint32_t batch_size_in_bytes = sizeof(T) * batch_size;
-      uint64_t total_batches = (size + batch_size - 1) / batch_size;
-      idx_t current_index = 0;
-
-      for (uint32_t i = 0; i < total_batches; i++) {
-        for (idx_t j = 0; j < batch_size; j++) {
-          if (counter_vec_data[current_index] ==
-              counter_vec_data[current_index + j]) {
-            continue;
-          }
-
-          DecryptPerValue<T>(nonce_hi_data, nonce_lo_data, counter_vec_data,
-                             cipher_vec_data, value_vec_data, size, result_data,
-                             lstate, lstate.encryption_state, *key, same_nonce);
-          return;
-        }
-
-        current_index += batch_size;
-      }
-
-      DecryptAllBatchesVectorized<T>(lstate, counter_vec_data, value_vec_data, result_data, size, key);
-
-      }
-#endif
 }
-
 
 
 template <typename T>
 void DecryptDataVariable(Vector &input_vector, uint64_t size,
                       ExpressionState &state, Vector &result) {
-  // TODO: check validity when storing decrypted values
+
+  D_ASSERT(input_vector.GetType().id() == LogicalTypeId::STRUCT);
   ValidityMask &result_validity = FlatVector::Validity(result);
   result.SetVectorType(VectorType::FLAT_VECTOR);
   auto result_data = FlatVector::GetData<T>(result);
 
   // local, vcrypt (global) and encryption state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
-  lstate.index = 0;
   auto vcrypt_state = VCryptBasicFun::GetVCryptState(state);
   auto key = VCryptBasicFun::GetKey(state);
 
-  D_ASSERT(input_vector.GetType().id() == LogicalTypeId::STRUCT);
 
   auto &children = StructVector::GetEntries(input_vector);
   auto &nonce_hi = children[0];
   auto &nonce_lo = children[1];
   auto &counter_vec = children[2];
   auto &cipher_vec = children[3];
+  auto &value_vec = children[4];
+  D_ASSERT(value_vec->GetType() == LogicalTypeId::BLOB);
 
   UnifiedVectorFormat nonce_hi_u;
   UnifiedVectorFormat nonce_lo_u;
   UnifiedVectorFormat counter_vec_u;
   UnifiedVectorFormat cipher_vec_u;
+  UnifiedVectorFormat value_vec_u;
 
   nonce_hi->ToUnifiedFormat(size, nonce_hi_u);
   nonce_lo->ToUnifiedFormat(size, nonce_lo_u);
   counter_vec->ToUnifiedFormat(size, counter_vec_u);
   cipher_vec->ToUnifiedFormat(size, cipher_vec_u);
+  value_vec->ToUnifiedFormat(size,value_vec_u);
 
-  auto &value_vec = children[4];
-
-  D_ASSERT(value_vec->GetType() == LogicalTypeId::BLOB);
-
-  UnifiedVectorFormat value_vec_u;
-  value_vec->ToUnifiedFormat(size, value_vec_u);
-  auto value_vec_data = FlatVector::GetData<string_t>(*value_vec);
-
+  // change to unified vector format to handle compressed vectors
   auto nonce_hi_data = FlatVector::GetData<uint64_t>(*nonce_hi);
   auto nonce_lo_data = FlatVector::GetData<uint64_t>(*nonce_lo);
   auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
   auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
+  auto value_vec_data = FlatVector::GetData<string_t>(*value_vec);
 
   bool same_nonce = true;
   if (!CheckNonce(nonce_hi_data, nonce_lo_data, size)) {

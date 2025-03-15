@@ -136,6 +136,7 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
       if (!validity.RowIsValid(lstate.index)) {
         continue;
       }
+
       blob_vec_data[current_index] = encrypted_string;
       cipher_vec_data[current_index] = MaskCipher(i, &plaintext_bytes, false);
       counter_vec_data[current_index] = batch_nr;
