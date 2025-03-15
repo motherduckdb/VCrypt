@@ -277,4 +277,144 @@ if (value_vec->GetVectorType() == VectorType::DICTIONARY_VECTOR && same_nonce) {
     DecryptAllBatchesVectorized<T>(lstate, counter_vec_data, value_vec_data, result_data, size, key);
 
     }
+
+template <typename T>
+void DecryptDataVariable(Vector &input_vector, uint64_t size,
+                      ExpressionState &state, Vector &result) {
+
+  D_ASSERT(input_vector.GetType().id() == LogicalTypeId::STRUCT);
+  ValidityMask &result_validity = FlatVector::Validity(result);
+  result.SetVectorType(VectorType::FLAT_VECTOR);
+  auto result_data = FlatVector::GetData<T>(result);
+
+  // local, vcrypt (global) and encryption state
+  auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
+  auto vcrypt_state = VCryptBasicFun::GetVCryptState(state);
+  auto key = VCryptBasicFun::GetKey(state);
+
+  auto &children = StructVector::GetEntries(input_vector);
+  auto &nonce_hi = children[0];
+  auto &nonce_lo = children[1];
+  auto &counter_vec = children[2];
+  auto &cipher_vec = children[3];
+  auto &value_vec = children[4];
+  D_ASSERT(value_vec->GetType() == LogicalTypeId::BLOB);
+
+  UnifiedVectorFormat nonce_hi_u;
+  UnifiedVectorFormat nonce_lo_u;
+  UnifiedVectorFormat counter_vec_u;
+  UnifiedVectorFormat cipher_vec_u;
+  UnifiedVectorFormat value_vec_u;
+
+  nonce_hi->ToUnifiedFormat(size, nonce_hi_u);
+  nonce_lo->ToUnifiedFormat(size, nonce_lo_u);
+  counter_vec->ToUnifiedFormat(size, counter_vec_u);
+  cipher_vec->ToUnifiedFormat(size, cipher_vec_u);
+  value_vec->ToUnifiedFormat(size,value_vec_u);
+
+  // change to unified vector format to handle compressed vectors
+  auto nonce_hi_data = FlatVector::GetData<uint64_t>(*nonce_hi);
+  auto nonce_lo_data = FlatVector::GetData<uint64_t>(*nonce_lo);
+  auto counter_vec_data = FlatVector::GetData<uint32_t>(*counter_vec);
+  auto cipher_vec_data = FlatVector::GetData<uint16_t>(*cipher_vec);
+  auto value_vec_data = FlatVector::GetData<string_t>(*value_vec);
+
+  bool same_nonce = true;
+  if (!CheckNonce(nonce_hi_data, nonce_lo_data, size)) {
+    same_nonce = false;
+    DecryptPerValueVariable<T>(nonce_hi_data, nonce_lo_data, counter_vec_data,
+                       cipher_vec_data, value_vec_data, size, result_data,
+                       lstate, lstate.encryption_state, *key, same_nonce, result);
+    return;
+  }
+
+  // assign the right parts of the nonce and counter to iv
+  lstate.iv[0] = static_cast<uint32_t>(nonce_hi_data[0] >> 32);
+  lstate.iv[1] = static_cast<uint32_t>(nonce_hi_data[0] & 0xFFFFFFFF);
+  lstate.iv[2] = nonce_lo_data[0];
+
+  uint64_t current_batch = 0;
+  uint16_t total_batches = (size + BATCH_SIZE - 1) / BATCH_SIZE;
+  lstate.to_process = size;
+  idx_t index = 0;
+  uint32_t batch_size = BATCH_SIZE;
+
+  if (lstate.to_process < BATCH_SIZE){
+    batch_size = lstate.to_process;
+  }
+
+  index = 0;
+  while (current_batch < total_batches) {
+    for (idx_t j = 0; j < batch_size; j++) {
+      // check if the counter is sequential
+      if (counter_vec_data[index] == counter_vec_data[index + j]) {
+        continue;
+      }
+
+      DecryptPerValueVariable<T>(nonce_hi_data, nonce_lo_data, counter_vec_data,
+                                 cipher_vec_data, value_vec_data, size,
+                                 result_data, lstate, lstate.encryption_state,
+                                 *key, same_nonce, result);
+      return;
+    }
+
+    // for every batch, the IV is reset due to rounding to the nearest 16-byte block
+    lstate.ResetIV<T>(counter_vec_data[index]);
+    // for every batch, reset the encryption state
+    lstate.encryption_state->InitializeDecryption(
+        reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
+        reinterpret_cast<const string *>(key));
+
+    // index 150 is too high
+    auto batch_size_stored = value_vec_data[index].GetSize();
+    auto metadata_ptr = value_vec_data[index].GetDataWriteable();
+    data_ptr_t buffer_ptr = reinterpret_cast<data_ptr_t const>(
+        value_vec_data[index].GetDataWriteable());
+
+    // we decrypt in place
+    lstate.encryption_state->Process(
+        reinterpret_cast<const_data_ptr_t>(value_vec_data[index].GetData()),
+        batch_size_stored, (data_ptr_t)value_vec_data[index].GetData(),
+        batch_size_stored);
+
+    uint8_t vcrypt_version =
+        Load<uint8_t>(reinterpret_cast<const_data_ptr_t>(metadata_ptr));
+    metadata_ptr++;
+
+    // previous offset is metadata length (hardcoded for now)
+    uint64_t prev_offset = 1025;
+    uint64_t current_offset, length;
+    buffer_ptr += prev_offset;
+
+    for (uint8_t j = 0; j < batch_size; j++) {
+      current_offset =
+          Load<uint64_t>(reinterpret_cast<const_data_ptr_t>(metadata_ptr));
+      D_ASSERT(current_offset > prev_offset);
+      length = current_offset - prev_offset;
+
+      result_data[index] = StringVector::EmptyString(result, length);
+      memcpy(result_data[index].GetDataWriteable(), buffer_ptr, length);
+      result_data[index].Finalize();
+
+      buffer_ptr += length;
+      prev_offset = current_offset;
+      metadata_ptr += sizeof(uint64_t);
+      index++;
+    }
+
+    // todo: optimize this chunk of code
+    if (lstate.to_process > BATCH_SIZE) {
+      lstate.to_process -= BATCH_SIZE;
+    } else {
+      // processing finalized
+      lstate.to_process = 0;
+      break;
+    }
+    if (lstate.to_process < BATCH_SIZE) {
+      batch_size = lstate.to_process;
+    }
+
+    current_batch++;
+  }
+}
 #endif

@@ -125,8 +125,10 @@ void AESStateSSL::InitializeDecryption(const_data_ptr_t iv, idx_t iv_len,
 size_t AESStateSSL::Process(const_data_ptr_t in, idx_t in_len, data_ptr_t out,
                             idx_t out_len) {
 
+#ifdef DEBUG
   uint32_t iv_len = GetCurrentIVLength();
   uint32_t iv_buf[4];
+#endif
 
   D_ASSERT(iv_len == 16);
 

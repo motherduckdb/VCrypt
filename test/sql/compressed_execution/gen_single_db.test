@@ -12,22 +12,18 @@ CREATE SECRET key_2 (
     LENGTH 16
 );
 
-# load the DB from disk
 statement ok
-ATTACH 'encdb001.db' AS enc;
+ATTACH 'enc_orders_sf001.db' AS enc;
 
 statement ok
 CALL dbgen(sf=0.01);
 
 statement ok
-SET threads=1;
+CREATE TABLE enc.encrypted_orders AS
+SELECT encrypt(o_orderpriority, 'key_2') AS o_orderpriority FROM orders;
 
 statement ok
-CREATE TABLE enc.encrypted_lineitem AS
-SELECT encrypt(l_orderkey, 'key_2') AS l_orderkey FROM lineitem;
-
-statement ok
-DROP TABLE lineitem;
+DROP TABLE orders;
 
 statement ok
 CHECKPOINT;
