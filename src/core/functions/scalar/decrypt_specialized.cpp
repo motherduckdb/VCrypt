@@ -1,5 +1,12 @@
 #if 0
 
+// ---------- We can check whether ctr and cpr are increasing ----------
+
+//  TODO; we can decrypt en put everything in 1 go, IF;
+// the counter is 128x the same for the whole vector
+// the cipher is increasing
+// the selection vector in the dict is sequential (128 x the same in the sel vec) the cipher is increasing from 0 to 127
+
 bool CheckSequenceInDict(SelectionVector &dict_sel_value, uint64_t size) {
   idx_t child_idx;
   idx_t prev_idx = dict_sel_value.get_index(0);
