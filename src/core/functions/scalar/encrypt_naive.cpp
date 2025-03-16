@@ -36,8 +36,8 @@ ProcessAndCastEncrypt(shared_ptr<EncryptionState> encryption_state,
                       Vector &result, T plaintext_data, uint8_t *buffer_p) {
   T encrypted_data;
   encryption_state->Process(
-      reinterpret_cast<unsigned char *>(&plaintext_data), sizeof(int32_t),
-      reinterpret_cast<unsigned char *>(&encrypted_data), sizeof(int32_t));
+      reinterpret_cast<unsigned char *>(&plaintext_data), sizeof(T),
+      reinterpret_cast<unsigned char *>(&encrypted_data), sizeof(T));
   return encrypted_data;
 }
 
@@ -115,6 +115,7 @@ ProcessDecrypt(shared_ptr<EncryptionState> encryption_state,
       buffer_p, encrypted_size,
       reinterpret_cast<unsigned char *>(decrypted_data.GetDataWriteable()),
       decrypted_size);
+  decrypted_data.Finalize();
 
   return decrypted_data;
 }
@@ -138,6 +139,7 @@ ProcessAndCastDecrypt(shared_ptr<EncryptionState> encryption_state,
       buffer_p, encrypted_size,
       reinterpret_cast<unsigned char *>(decrypted_data.GetDataWriteable()),
       decrypted_size);
+  decrypted_data.Finalize();
 
   return decrypted_data;
 }
@@ -195,6 +197,54 @@ LogicalType CreateEINTtypeStruct() {
                               {"value", LogicalType::INTEGER}});
 }
 
+LogicalType CreateDATEtypeStruct() {
+  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
+                              {"nonce_lo", LogicalType::UBIGINT},
+                              {"value", LogicalType::DATE}});
+}
+
+LogicalType CreateBIGINTtypeStruct() {
+  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
+                              {"nonce_lo", LogicalType::UBIGINT},
+                              {"value", LogicalType::BIGINT}});
+}
+
+LogicalType CreateTStypeStruct() {
+  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
+                              {"nonce_lo", LogicalType::UBIGINT},
+                              {"value", LogicalType::TIMESTAMP}});
+}
+
+LogicalType CreateTSMStypeStruct() {
+  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
+                              {"nonce_lo", LogicalType::UBIGINT},
+                              {"value", LogicalType::TIMESTAMP_MS}});
+}
+
+LogicalType CreateTSNStypeStruct() {
+  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
+                              {"nonce_lo", LogicalType::UBIGINT},
+                              {"value", LogicalType::TIMESTAMP_NS}});
+}
+
+LogicalType CreateTSStypeStruct() {
+  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
+                              {"nonce_lo", LogicalType::UBIGINT},
+                              {"value", LogicalType::TIMESTAMP_S}});
+}
+
+LogicalType CreateTSTZtypeStruct() {
+  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
+                              {"nonce_lo", LogicalType::UBIGINT},
+                              {"value", LogicalType::TIMESTAMP_TZ}});
+}
+
+LogicalType CreateTtypeStruct() {
+  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
+                              {"nonce_lo", LogicalType::UBIGINT},
+                              {"value", LogicalType::TIME}});
+}
+
 LogicalType CreateEVARtypeStruct() {
   return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                               {"nonce_lo", LogicalType::UBIGINT},
@@ -208,7 +258,6 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
 
   // global, local and encryption state
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
-  auto vcrypt_state = GetVCryptState(state);
   auto key = VCryptBasicFun::GetKey(state);
 
   // Reset the reference of the result vector
@@ -229,7 +278,7 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
   GenericExecutor::ExecuteUnary<PLAINTEXT_TYPE, ENCRYPTED_TYPE>(
       input_vector, result, size, [&](PLAINTEXT_TYPE input) {
 
-        lstate.iv[1]++;
+        lstate.iv[2]++;
         lstate.counter++;
 
         lstate.encryption_state->InitializeEncryption(
@@ -240,8 +289,10 @@ void EncryptToEtype(LogicalType result_struct, Vector &input_vector,
             ProcessAndCastEncrypt(lstate.encryption_state, result, input.val,
                                   lstate.buffer_p);
 
-        return ENCRYPTED_TYPE{lstate.iv[0],
-                              lstate.iv[1], encrypted_data};
+        uint64_t hi = (static_cast<uint64_t>(lstate.iv[0]) << 32) | lstate.iv[1];
+        uint64_t lo = lstate.iv[2];
+
+        return ENCRYPTED_TYPE{hi, lo, encrypted_data};
       });
 
 }
@@ -260,15 +311,16 @@ void DecryptFromEtypeNaive(Vector &input_vector, uint64_t size,
 
   GenericExecutor::ExecuteUnary<ENCRYPTED_TYPE, PLAINTEXT_TYPE>(
       input_vector, result, size, [&](ENCRYPTED_TYPE input) {
-        lstate.iv[0] = input.a_val;
-        lstate.iv[1] = input.b_val;
+
+        lstate.iv[0] = static_cast<uint32_t>(input.a_val >> 32);
+        lstate.iv[1] = static_cast<uint32_t>(input.a_val & 0xFFFFFFFF);
+        lstate.iv[2] = static_cast<uint32_t>(input.b_val);
 
         lstate.encryption_state->InitializeDecryption(
-            reinterpret_cast<const_data_ptr_t>(lstate.iv), 12,
+            reinterpret_cast<const_data_ptr_t>(lstate.iv), 16,
             reinterpret_cast<const string *>(key));
 
-        T decrypted_data =
-            ProcessAndCastDecrypt(lstate.encryption_state, result, input.c_val,
+        T decrypted_data = ProcessAndCastDecrypt(lstate.encryption_state, result, input.c_val,
                                   lstate.buffer_p);
         return decrypted_data;
       });
@@ -282,8 +334,7 @@ static void EncryptDataToEtype(DataChunk &args, ExpressionState &state,
   auto vector_type = input_vector.GetType();
   auto size = args.size();
 
-  if (vector_type.IsNumeric()) {
-    switch (vector_type.id()) {
+  switch (vector_type.id()) {
     case LogicalTypeId::TINYINT:
     case LogicalTypeId::UTINYINT:
       return EncryptToEtype<int8_t>(CreateEINTtypeStruct(), input_vector,
@@ -295,11 +346,14 @@ static void EncryptDataToEtype(DataChunk &args, ExpressionState &state,
     case LogicalTypeId::INTEGER:
       return EncryptToEtype<int32_t>(CreateEINTtypeStruct(), input_vector,
                                      size, state, result);
+    case LogicalTypeId::DATE:
+      return EncryptToEtype<int32_t>(CreateDATEtypeStruct(), input_vector,
+                                     size, state, result);
     case LogicalTypeId::UINTEGER:
       return EncryptToEtype<uint32_t>(CreateEINTtypeStruct(), input_vector,
                                       size, state, result);
     case LogicalTypeId::BIGINT:
-      return EncryptToEtype<int64_t>(CreateEINTtypeStruct(), input_vector,
+      return EncryptToEtype<int64_t>(CreateBIGINTtypeStruct(), input_vector,
                                      size, state, result);
     case LogicalTypeId::UBIGINT:
       return EncryptToEtype<uint64_t>(CreateEINTtypeStruct(), input_vector,
@@ -310,19 +364,30 @@ static void EncryptDataToEtype(DataChunk &args, ExpressionState &state,
     case LogicalTypeId::DOUBLE:
       return EncryptToEtype<double>(CreateEINTtypeStruct(), input_vector,
                                     size, state, result);
-    default:
-      throw NotImplementedException("Unsupported numeric type for encryption");
-    }
-  } else if (vector_type.id() == LogicalTypeId::VARCHAR) {
+    case LogicalTypeId::VARCHAR:
     return EncryptToEtype<string_t>(CreateEVARtypeStruct(), input_vector,
                                     size, state, result);
-  } else if (vector_type.IsNested()) {
-    throw NotImplementedException(
-        "Nested types are not supported for encryption");
-  } else if (vector_type.IsTemporal()) {
-    throw NotImplementedException(
-        "Temporal types are not supported for encryption");
-  }
+    case LogicalTypeId::TIMESTAMP:
+      return EncryptToEtype<int64_t>(CreateTStypeStruct(), input_vector, size,
+                                      state, result);
+    case LogicalTypeId::TIMESTAMP_SEC:
+      return EncryptToEtype<int64_t>(CreateTSStypeStruct(), input_vector, size,
+                                      state, result);
+    case LogicalTypeId::TIMESTAMP_NS:
+      return EncryptToEtype<int64_t>(CreateTSNStypeStruct(), input_vector,
+                                      size, state, result);
+    case LogicalTypeId::TIMESTAMP_MS:
+      return EncryptToEtype<int64_t>(CreateTSMStypeStruct(), input_vector,
+                                      size, state, result);
+    case LogicalTypeId::TIMESTAMP_TZ:
+      return EncryptToEtype<int64_t>(CreateTSTZtypeStruct(), input_vector,
+                                      size, state, result);
+    case LogicalTypeId::TIME:
+      return EncryptToEtype<int64_t>(CreateTtypeStruct(), input_vector, size,
+                                      state, result);
+    default:
+      throw NotImplementedException("Unsupported type for encryption");
+    }
 }
 
 
@@ -336,8 +401,7 @@ static void DecryptDataFromEtype(DataChunk &args, ExpressionState &state,
   // get type of vector containing encrypted values
   auto vector_type = children[2]->GetType();
 
-  if (vector_type.IsNumeric()) {
-    switch (vector_type.id()) {
+  switch (vector_type.id()) {
     case LogicalTypeId::TINYINT:
     case LogicalTypeId::UTINYINT:
       return DecryptFromEtypeNaive<int8_t>(input_vector, size, state, result);
@@ -346,12 +410,19 @@ static void DecryptDataFromEtype(DataChunk &args, ExpressionState &state,
       return DecryptFromEtypeNaive<int16_t>(input_vector, size, state,
                                        result);
     case LogicalTypeId::INTEGER:
+    case LogicalTypeId::DATE:
       return DecryptFromEtypeNaive<int32_t>(input_vector, size, state,
                                        result);
     case LogicalTypeId::UINTEGER:
       return DecryptFromEtypeNaive<uint32_t>(input_vector, size, state,
                                         result);
     case LogicalTypeId::BIGINT:
+    case LogicalTypeId::TIMESTAMP:
+    case LogicalTypeId::TIMESTAMP_TZ:
+    case LogicalTypeId::TIMESTAMP_SEC:
+    case LogicalTypeId::TIMESTAMP_MS:
+    case LogicalTypeId::TIMESTAMP_NS:
+    case LogicalTypeId::TIME:
       return DecryptFromEtypeNaive<int64_t>(input_vector, size, state,
                                        result);
     case LogicalTypeId::UBIGINT:
@@ -361,17 +432,10 @@ static void DecryptDataFromEtype(DataChunk &args, ExpressionState &state,
       return DecryptFromEtypeNaive<float>(input_vector, size, state, result);
     case LogicalTypeId::DOUBLE:
       return DecryptFromEtypeNaive<double>(input_vector, size, state, result);
+    case LogicalTypeId::VARCHAR:
+      return DecryptFromEtypeNaive<string_t>(input_vector, size, state, result);
     default:
       throw NotImplementedException("Unsupported numeric type for decryption");
-    }
-  } else if (vector_type.id() == LogicalTypeId::VARCHAR) {
-    return DecryptFromEtypeNaive<string_t>(input_vector, size, state, result);
-  } else if (vector_type.IsNested()) {
-    throw NotImplementedException(
-        "Nested types are not supported for decryption");
-  } else if (vector_type.IsTemporal()) {
-    throw NotImplementedException(
-        "Temporal types are not supported for decryption");
   }
 }
 

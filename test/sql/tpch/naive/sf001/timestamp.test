@@ -1,0 +1,44 @@
+# name: test/sql/tpch/naive/sf001/timestamp.test
+# description: Test VCRYPT encryption with OpenSSL for Loading TPC-H sf 0.01
+# this tests only encrypts one column (l_shipdate) from the lineitem table
+# group: [vcrypt]
+
+# Ensure any currently stored secrets don't interfere with the test
+statement ok
+set allow_persistent_secrets=false;
+
+require vcrypt
+
+require tpch
+
+# load the DB from disk
+statement ok
+ATTACH 'lshipdate_tpch_sf001_naive.db' AS enc;
+
+statement ok
+CALL dbgen(sf=0.01);
+
+statement ok
+CREATE SECRET key_2 (
+    TYPE VCRYPT,
+    TOKEN 'ABCDEFGHIJKLMNOP',
+    LENGTH 16
+);
+
+statement ok
+CREATE TABLE enc.lineitem AS
+SELECT
+    encrypt_naive(l_shipdate, 'key_2') AS l_shipdate,
+FROM lineitem;
+
+statement ok
+CHECKPOINT;
+
+query I
+SELECT decrypt_naive(l_shipdate, 'key_2') FROM enc.lineitem LIMIT 5;
+----
+1996-03-13
+1996-04-12
+1996-01-29
+1996-04-21
+1996-03-30

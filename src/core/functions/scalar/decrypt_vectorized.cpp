@@ -277,9 +277,8 @@ void DecryptPerValueVariable(uint64_t *nonce_hi_data, uint64_t *nonce_lo_data,
         reinterpret_cast<const string *>(&key));
 
     auto batch_size_stored = value_vec_data[i].GetSize();
-    // reset buffer is size is exceeded
-
     if (batch_size_stored > lstate.max_buffer_size) {
+      // we might need to resize the buffer
       lstate.arena.Reset();
       lstate.buffer_p = (data_ptr_t)lstate.arena.Allocate(batch_size_stored);
       lstate.max_buffer_size = batch_size_stored;

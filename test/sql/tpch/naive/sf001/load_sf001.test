@@ -1,0 +1,49 @@
+# name: test/sql/tpch/naive/sf001/load_sf001.test
+# description: Test VCRYPT encryption with OpenSSL for Loading TPC-H sf 0.01
+# this tests only encrypts one column (l_orderkey) from the lineitem table
+# group: [vcrypt]
+
+# Ensure any currently stored secrets don't interfere with the test
+statement ok
+set allow_persistent_secrets=false;
+
+require vcrypt
+
+require tpch
+
+# load the DB from disk
+statement ok
+ATTACH 'lorderkey_tpch_sf001_allint_naive.db' AS enc;
+
+statement ok
+CALL dbgen(sf=0.01);
+
+statement ok
+CREATE SECRET key_2 (
+    TYPE VCRYPT,
+    TOKEN 'ABCDEFGHIJKLMNOP',
+    LENGTH 16
+);
+
+statement ok
+CREATE TABLE enc.lineitem AS
+SELECT
+    encrypt_naive(l_orderkey, 'key_2') AS l_orderkey,
+FROM lineitem;
+
+statement ok
+CHECKPOINT;
+
+query I
+SELECT decrypt_naive(l_orderkey, 'key_2') FROM enc.lineitem LIMIT 10;
+----
+1
+1
+1
+1
+1
+1
+2
+3
+3
+3
