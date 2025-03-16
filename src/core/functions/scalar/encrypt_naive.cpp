@@ -190,65 +190,10 @@ bool CheckGeneratedKeySize(const uint32_t size){
   }
 }
 
-// todo; template
-LogicalType CreateEINTtypeStruct() {
+LogicalType GetReturnTypeStruct(LogicalType logical_type){
   return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
                               {"nonce_lo", LogicalType::UBIGINT},
-                              {"value", LogicalType::INTEGER}});
-}
-
-LogicalType CreateDATEtypeStruct() {
-  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-                              {"nonce_lo", LogicalType::UBIGINT},
-                              {"value", LogicalType::DATE}});
-}
-
-LogicalType CreateBIGINTtypeStruct() {
-  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-                              {"nonce_lo", LogicalType::UBIGINT},
-                              {"value", LogicalType::BIGINT}});
-}
-
-LogicalType CreateTStypeStruct() {
-  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-                              {"nonce_lo", LogicalType::UBIGINT},
-                              {"value", LogicalType::TIMESTAMP}});
-}
-
-LogicalType CreateTSMStypeStruct() {
-  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-                              {"nonce_lo", LogicalType::UBIGINT},
-                              {"value", LogicalType::TIMESTAMP_MS}});
-}
-
-LogicalType CreateTSNStypeStruct() {
-  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-                              {"nonce_lo", LogicalType::UBIGINT},
-                              {"value", LogicalType::TIMESTAMP_NS}});
-}
-
-LogicalType CreateTSStypeStruct() {
-  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-                              {"nonce_lo", LogicalType::UBIGINT},
-                              {"value", LogicalType::TIMESTAMP_S}});
-}
-
-LogicalType CreateTSTZtypeStruct() {
-  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-                              {"nonce_lo", LogicalType::UBIGINT},
-                              {"value", LogicalType::TIMESTAMP_TZ}});
-}
-
-LogicalType CreateTtypeStruct() {
-  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-                              {"nonce_lo", LogicalType::UBIGINT},
-                              {"value", LogicalType::TIME}});
-}
-
-LogicalType CreateEVARtypeStruct() {
-  return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
-                              {"nonce_lo", LogicalType::UBIGINT},
-                              {"value", LogicalType::VARCHAR}});
+                              {"value", logical_type}});
 }
 
 template <typename T>
@@ -337,54 +282,40 @@ static void EncryptDataToEtype(DataChunk &args, ExpressionState &state,
   switch (vector_type.id()) {
     case LogicalTypeId::TINYINT:
     case LogicalTypeId::UTINYINT:
-      return EncryptToEtype<int8_t>(CreateEINTtypeStruct(), input_vector,
+      return EncryptToEtype<int8_t>(GetReturnTypeStruct(vector_type), input_vector,
                                     size, state, result);
     case LogicalTypeId::SMALLINT:
     case LogicalTypeId::USMALLINT:
-      return EncryptToEtype<int16_t>(CreateEINTtypeStruct(), input_vector,
+      return EncryptToEtype<int16_t>(GetReturnTypeStruct(vector_type), input_vector,
                                      size, state, result);
     case LogicalTypeId::INTEGER:
-      return EncryptToEtype<int32_t>(CreateEINTtypeStruct(), input_vector,
-                                     size, state, result);
     case LogicalTypeId::DATE:
-      return EncryptToEtype<int32_t>(CreateDATEtypeStruct(), input_vector,
+      return EncryptToEtype<int32_t>(GetReturnTypeStruct(vector_type), input_vector,
                                      size, state, result);
     case LogicalTypeId::UINTEGER:
-      return EncryptToEtype<uint32_t>(CreateEINTtypeStruct(), input_vector,
+      return EncryptToEtype<uint32_t>(GetReturnTypeStruct(vector_type), input_vector,
                                       size, state, result);
     case LogicalTypeId::BIGINT:
-      return EncryptToEtype<int64_t>(CreateBIGINTtypeStruct(), input_vector,
+    case LogicalTypeId::TIMESTAMP:
+    case LogicalTypeId::TIMESTAMP_SEC:
+    case LogicalTypeId::TIMESTAMP_NS:
+    case LogicalTypeId::TIMESTAMP_MS:
+    case LogicalTypeId::TIMESTAMP_TZ:
+    case LogicalTypeId::TIME:
+      return EncryptToEtype<int64_t>(GetReturnTypeStruct(vector_type), input_vector,
                                      size, state, result);
     case LogicalTypeId::UBIGINT:
-      return EncryptToEtype<uint64_t>(CreateEINTtypeStruct(), input_vector,
+      return EncryptToEtype<uint64_t>(GetReturnTypeStruct(vector_type), input_vector,
                                       size, state, result);
     case LogicalTypeId::FLOAT:
-      return EncryptToEtype<float>(CreateEINTtypeStruct(), input_vector,
+      return EncryptToEtype<float>(GetReturnTypeStruct(vector_type), input_vector,
                                    size, state, result);
     case LogicalTypeId::DOUBLE:
-      return EncryptToEtype<double>(CreateEINTtypeStruct(), input_vector,
+      return EncryptToEtype<double>(GetReturnTypeStruct(vector_type), input_vector,
                                     size, state, result);
     case LogicalTypeId::VARCHAR:
-    return EncryptToEtype<string_t>(CreateEVARtypeStruct(), input_vector,
+    return EncryptToEtype<string_t>(GetReturnTypeStruct(vector_type), input_vector,
                                     size, state, result);
-    case LogicalTypeId::TIMESTAMP:
-      return EncryptToEtype<int64_t>(CreateTStypeStruct(), input_vector, size,
-                                      state, result);
-    case LogicalTypeId::TIMESTAMP_SEC:
-      return EncryptToEtype<int64_t>(CreateTSStypeStruct(), input_vector, size,
-                                      state, result);
-    case LogicalTypeId::TIMESTAMP_NS:
-      return EncryptToEtype<int64_t>(CreateTSNStypeStruct(), input_vector,
-                                      size, state, result);
-    case LogicalTypeId::TIMESTAMP_MS:
-      return EncryptToEtype<int64_t>(CreateTSMStypeStruct(), input_vector,
-                                      size, state, result);
-    case LogicalTypeId::TIMESTAMP_TZ:
-      return EncryptToEtype<int64_t>(CreateTSTZtypeStruct(), input_vector,
-                                      size, state, result);
-    case LogicalTypeId::TIME:
-      return EncryptToEtype<int64_t>(CreateTtypeStruct(), input_vector, size,
-                                      state, result);
     default:
       throw NotImplementedException("Unsupported type for encryption");
     }
@@ -398,7 +329,6 @@ static void DecryptDataFromEtype(DataChunk &args, ExpressionState &state,
   auto &input_vector = args.data[0];
 
   auto &children = StructVector::GetEntries(input_vector);
-  // get type of vector containing encrypted values
   auto vector_type = children[2]->GetType();
 
   switch (vector_type.id()) {
@@ -468,12 +398,6 @@ ScalarFunctionSet GetDecryptionStructFunction() {
             type, DecryptDataFromEtype, EncryptFunctionData::EncryptBind, nullptr, nullptr, VCryptFunctionLocalState::Init));
       }
     }
-
-    // TODO: Fix EINT encryption
-//      set.AddFunction(ScalarFunction({EncryptionTypes::E_INTEGER(),
-//      LogicalType::VARCHAR}, LogicalTypeId::INTEGER, DecryptDataFromEtype,
-//                                     EncryptFunctionData::EncryptBind));
-
   }
 
   return set;
