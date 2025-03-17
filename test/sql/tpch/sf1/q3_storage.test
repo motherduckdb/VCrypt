@@ -1,0 +1,70 @@
+# name: test/sql/tpch/q3_storage.test
+# description: Test VCRYPT encryption with OpenSSL for TPC-H
+# group: [vcrypt]
+
+# Ensure any currently stored secrets don't interfere with the test
+statement ok
+set allow_persistent_secrets=false;
+
+require vcrypt
+
+require tpch
+
+# load the DB from disk
+statement ok
+ATTACH 'lorderkey_tpch_sf1_vec.db' AS enc;
+
+# re-add key upon loading the DB again
+statement ok
+CREATE SECRET key_2 (
+    TYPE VCRYPT,
+    TOKEN 'ABCDEFGHIJKLMNOP',
+    LENGTH 16
+);
+
+statement ok
+CREATE VIEW lineitem AS
+SELECT
+    decrypt(l_orderkey, 'key_2') AS l_orderkey,
+    l_partkey,
+    l_suppkey,
+    l_linenumber,
+    l_quantity,
+    l_extendedprice,
+    l_discount,
+    l_tax,
+    l_returnflag,
+    l_linestatus,
+    l_shipdate,
+    l_commitdate,
+    l_receiptdate,
+    l_shipinstruct,
+    l_shipmode,
+    l_comment
+FROM enc.lineitem;
+
+statement ok
+CREATE TABLE region AS SELECT * FROM enc.region;
+
+statement ok
+CREATE TABLE nation AS SELECT * FROM enc.nation;
+
+statement ok
+CREATE TABLE customer AS SELECT * FROM enc.customer;
+
+statement ok
+CREATE TABLE supplier AS SELECT * FROM enc.supplier;
+
+statement ok
+CREATE TABLE part AS SELECT * FROM enc.part;
+
+statement ok
+CREATE TABLE partsupp AS SELECT * FROM enc.partsupp;
+
+statement ok
+CREATE TABLE orders AS SELECT * FROM enc.orders;
+
+query I
+PRAGMA tpch(3)
+----
+<FILE>:duckdb/extension/tpch/dbgen/answers/sf1/q03.csv

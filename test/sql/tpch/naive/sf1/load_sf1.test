@@ -1,0 +1,85 @@
+# name: test/sql/tpch/naive/sf001/load_sf1.test
+# description: Test VCRYPT encryption with OpenSSL for Loading TPC-H sf1
+# this tests only encrypts one column (l_orderkey) from the lineitem table
+# group: [vcrypt]
+
+# Ensure any currently stored secrets don't interfere with the test
+statement ok
+set allow_persistent_secrets=false;
+
+require vcrypt
+
+require tpch
+
+# load the DB from disk
+statement ok
+ATTACH 'lorderkey_tpch_sf1_naive.db' AS encnaive;
+
+statement ok
+CALL dbgen(sf=1);
+
+statement ok
+CREATE SECRET key_2 (
+    TYPE VCRYPT,
+    TOKEN 'ABCDEFGHIJKLMNOP',
+    LENGTH 16
+);
+
+statement ok
+CREATE TABLE encnaive.lineitem AS
+SELECT
+    encrypt_naive(l_orderkey, 'key_2') AS l_orderkey,
+    l_partkey,
+    l_suppkey,
+    l_linenumber,
+    l_quantity,
+    l_extendedprice,
+    l_discount,
+    l_tax,
+    l_returnflag,
+    l_linestatus,
+    l_shipdate,
+    l_commitdate,
+    l_receiptdate,
+    l_shipinstruct,
+    l_shipmode,
+    l_comment
+FROM lineitem;
+
+statement ok
+CREATE TABLE encnaive.region AS SELECT * FROM region;
+
+statement ok
+CREATE TABLE encnaive.nation AS SELECT * FROM nation;
+
+statement ok
+CREATE TABLE encnaive.customer AS SELECT * FROM customer;
+
+statement ok
+CREATE TABLE encnaive.supplier AS SELECT * FROM supplier;
+
+statement ok
+CREATE TABLE encnaive.part AS SELECT * FROM part;
+
+statement ok
+CREATE TABLE encnaive.partsupp AS SELECT * FROM partsupp;
+
+statement ok
+CREATE TABLE encnaive.orders AS SELECT * FROM orders;
+
+statement ok
+CHECKPOINT;
+
+query I
+SELECT decrypt_naive(l_orderkey, 'key_2') FROM encnaive.lineitem LIMIT 10;
+----
+1
+1
+1
+1
+1
+1
+2
+3
+3
+3

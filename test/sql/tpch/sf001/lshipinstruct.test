@@ -1,0 +1,38 @@
+# name: test/sql/tpch/lshipinstruct.test
+# description: Test VCRYPT encryption with OpenSSL for Loading TPC-H sf 0.01
+# this tests only encrypts one column (l_shipinstruct) from the lineitem table
+# group: [vcrypt]
+
+# Ensure any currently stored secrets don't interfere with the test
+statement ok
+set allow_persistent_secrets=false;
+
+require vcrypt
+
+require tpch
+
+# load the DB from disk
+statement ok
+ATTACH 'lshipinstruct_tpch_sf001.db' AS enc_ship;
+
+statement ok
+CREATE SECRET key_2 (
+    TYPE VCRYPT,
+    TOKEN 'ABCDEFGHIJKLMNOP',
+    LENGTH 16
+);
+
+statement ok
+CREATE VIEW lineitem AS
+SELECT
+    decrypt(l_shipinstruct, 'key_2') AS l_shipinstruct
+FROM enc_ship.lineitem;
+
+query I
+SELECT l_shipinstruct FROM lineitem LIMIT 5;
+----
+DELIVER IN PERSON
+TAKE BACK RETURN
+TAKE BACK RETURN
+NONE
+NONE
