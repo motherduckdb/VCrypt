@@ -1,7 +1,5 @@
 #define DUCKDB_EXTENSION_MAIN
 
-#include "duckdb.hpp"
-#include "duckdb/main/client_context.hpp"
 #include "duckdb/main/extension_util.hpp"
 #include "duckdb/main/connection_manager.hpp"
 #include "duckdb/main/secret/secret_manager.hpp"
@@ -12,13 +10,11 @@
 #include "duckdb/common/encryption_state.hpp"
 #include "duckdb/common/vector_operations/generic_executor.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
-#include "mbedtls_wrapper.hpp"
 
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
 #include "vcrypt_state.hpp"
 #include "vcrypt/core/types.hpp"
-#include "vcrypt/core/crypto/crypto_primitives.hpp"
 #include "vcrypt/core/functions/common.hpp"
 #include "vcrypt/core/functions/scalar.hpp"
 #include "vcrypt/core/functions/secrets.hpp"
@@ -70,58 +66,6 @@ ProcessAndCastEncrypt(shared_ptr<EncryptionState> encryption_state,
 
 template <typename T>
 typename std::enable_if<std::is_same<T, string_t>::value, T>::type
-ProcessEncrypt(shared_ptr<EncryptionState> encryption_state,
-                      Vector &result, T plaintext_data, uint8_t *buffer_p) {
-
-  auto &children = StructVector::GetEntries(result);
-  auto &result_vector = children[2];
-
-  // first encrypt the bytes of the string into a temp buffer_p
-  auto input_data = data_ptr_t(plaintext_data.GetData());
-  auto value_size = plaintext_data.GetSize();
-
-  encryption_state->Process(input_data, value_size, buffer_p, value_size);
-
-  // Convert the encrypted data to a BLOB
-  auto encrypted_data =
-      string_t(reinterpret_cast<const char *>(buffer_p), value_size);
-  size_t base64_size = Blob::ToBase64Size(encrypted_data);
-
-  // convert to Base64 into a newly allocated string in the result vector
-  T base64_data = StringVector::EmptyString(*result_vector, base64_size);
-  base64_data.Finalize();
-  Blob::ToBase64(encrypted_data, base64_data.GetDataWriteable());
-
-  return base64_data;
-}
-
-
-template <typename T>
-typename std::enable_if<std::is_same<T, string_t>::value, T>::type
-ProcessDecrypt(shared_ptr<EncryptionState> encryption_state,
-                      Vector &result, T base64_data, uint8_t *buffer_p) {
-
-  // first encrypt the bytes of the string into a temp buffer_p
-  size_t encrypted_size = Blob::FromBase64Size(base64_data);
-  size_t decrypted_size = encrypted_size;
-  Blob::FromBase64(base64_data, reinterpret_cast<data_ptr_t>(buffer_p),
-                   encrypted_size);
-
-  D_ASSERT(encrypted_size <= base64_data.GetSize());
-
-  string_t decrypted_data =
-      StringVector::EmptyString(result, decrypted_size);
-  encryption_state->Process(
-      buffer_p, encrypted_size,
-      reinterpret_cast<unsigned char *>(decrypted_data.GetDataWriteable()),
-      decrypted_size);
-  decrypted_data.Finalize();
-
-  return decrypted_data;
-}
-
-template <typename T>
-typename std::enable_if<std::is_same<T, string_t>::value, T>::type
 ProcessAndCastDecrypt(shared_ptr<EncryptionState> encryption_state,
                       Vector &result, T base64_data, uint8_t *buffer_p) {
 
@@ -161,14 +105,6 @@ EncryptFunctionData &GetEncryptionBindInfo(ExpressionState &state) {
   return (EncryptFunctionData &)*func_expr.bind_info;
 }
 
-shared_ptr<VCryptState>
-GetVCryptState(ExpressionState &state) {
-
-  auto &info = GetEncryptionBindInfo(state);
-  return info.context.registered_state->Get<VCryptState>(
-      "vcrypt");
-}
-
 bool HasSpace(shared_ptr<VCryptState> vcrypt_state,
               uint64_t size) {
   uint32_t max_value = ~0u;
@@ -178,17 +114,6 @@ bool HasSpace(shared_ptr<VCryptState> vcrypt_state,
   return false;
 }
 
-bool CheckGeneratedKeySize(const uint32_t size){
-
-  switch(size){
-  case 16:
-  case 24:
-  case 32:
-    return true;
-  default:
-    return false;
-  }
-}
 
 LogicalType GetReturnTypeStruct(LogicalType logical_type){
   return LogicalType::STRUCT({{"nonce_hi", LogicalType::UBIGINT},
