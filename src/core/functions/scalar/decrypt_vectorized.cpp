@@ -148,8 +148,8 @@ inline void DecryptSingleValueVariable(uint32_t ctr, uint16_t cpr,
   auto base_ptr = lstate.buffer_p;
   auto vcrypt_version = Load<uint8_t>(lstate.buffer_p);
 
-  // VCrypt type byte + 8 bytes * cpr
-  auto metadata_len = 1025;
+  // VCrypt type byte + 8 bytes * BATCH_SIZE cpr
+  auto metadata_len = 1 + 8 * BATCH_SIZE;
   auto current_offset = (cpr == 0) ? metadata_len : Load<uint64_t>(base_ptr + 1 + ((cpr - 1) * sizeof(uint64_t)));
   auto next_offset = Load<uint64_t>(base_ptr + 1 + (cpr * sizeof(uint64_t)));
   auto length = next_offset - current_offset;
@@ -159,7 +159,7 @@ inline void DecryptSingleValueVariable(uint32_t ctr, uint16_t cpr,
   result_data[index].Finalize();
 
 #ifdef DEBUG
-  string_t res = result_data[index];
+  auto res = result_data[index];
 #endif
 }
 
@@ -190,8 +190,7 @@ inline void DecryptDataFixedSize(const SelectionVector *nonce_hi_u, const Select
     cpr = cpr_data[cipher_vec_u.sel->get_index(i)];
     val = val_data[value_vec_u.sel->get_index(i)];
 
-    if (same_nonce && ctr == lstate.counter) {
-      D_ASSERT(memcmp(lstate.prefix, val.GetPrefix(), 4) == 0);
+    if (same_nonce && ctr == lstate.counter && (memcmp(lstate.prefix, val.GetPrefix(), 4) == 0)) {
       result_data[i] = Load<T>(lstate.buffer_p + (cpr * sizeof(T)));
       continue;
     }
@@ -236,7 +235,19 @@ inline void DecryptDataVariableSize(const SelectionVector *nonce_hi_u, const Sel
 
     if (same_nonce && ctr == lstate.counter) {
       D_ASSERT(memcmp(lstate.prefix, val.GetPrefix(), 4) == 0);
-      result_data[i] = Load<T>(lstate.buffer_p + (cpr * sizeof(T)));
+
+      auto metadata_len = 1 + 8 * BATCH_SIZE;
+      auto current_offset = (cpr == 0) ? metadata_len : Load<uint64_t>(lstate.buffer_p + 1 + ((cpr - 1) * sizeof(uint64_t)));
+      auto next_offset = Load<uint64_t>(lstate.buffer_p + 1 + (cpr * sizeof(uint64_t)));
+      auto length = next_offset - current_offset;
+
+      result_data[i] = StringVector::EmptyString(result, length);
+      memcpy(result_data[i].GetDataWriteable(), lstate.buffer_p + current_offset, length);
+      result_data[i].Finalize();
+
+#ifdef DEBUG
+      auto res = result_data[i];
+#endif
       continue;
     }
 

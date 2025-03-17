@@ -368,7 +368,7 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
 
   auto index = 0;
   uint16_t batches = (size + BATCH_SIZE - 1) / BATCH_SIZE;
-  auto const metadata_len = 128 * sizeof(uint64_t) + 1;
+  auto const metadata_len = BATCH_SIZE * sizeof(uint64_t) + 1;
 
   uint32_t batch_size;
   lstate.to_process = size;
