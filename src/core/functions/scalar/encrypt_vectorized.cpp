@@ -166,13 +166,8 @@ void EncryptVectorizedFlat(T *input_vector, uint64_t size, ExpressionState &stat
 template <typename T>
 void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, Vector &result, uint8_t vector_type) {
 
-  // local and global vcrypt state
+  // local state and key
   auto &lstate = VCryptFunctionLocalState::ResetAndGet(state);
-  auto vcrypt_state =
-      VCryptBasicFun::GetVCryptState(state);
-
-  // auto encryption_state = VCryptBasicFun::GetEncryptionState(state);
-  // todo; fix key
   auto key = VCryptBasicFun::GetKey(state);
   auto &validity = FlatVector::Validity(result);
 
@@ -250,7 +245,7 @@ void EncryptVectorized(T *input_vector, uint64_t size, ExpressionState &state, V
   while (lstate.to_process) {
     buffer_offset = batch_nr * lstate.batch_size_in_bytes;
 
-    // copy the first 64 bits of plaintext of each batch
+    // copy the first 8 bytes of plaintext of each batch
     // TODO: fix for edge case; resulting bytes are less then 64 bits (=8 bytes)
     auto processed = batch_nr * BATCH_SIZE;
     memcpy(&plaintext_bytes, &input_vector[processed], sizeof(uint64_t));
@@ -309,7 +304,7 @@ void EncryptVectorizedVariable(T *input_vector, uint64_t size, ExpressionState &
   // Storage Layout
   // ----------------------------------------------------------------------------
   // 8 bytes VCrypt version
-  // 128 * 64 bytes is byte offset (could be truncated to 16 bits for small strings)
+  // BATCH_SIZE * 64 bytes is byte offset (could be truncated to 16 bits for small strings)
   // resulting bytes are total length of the encrypted data
 
   // local and global vcrypt state

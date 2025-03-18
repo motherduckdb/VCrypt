@@ -33,8 +33,6 @@ set(EXTENSION_SOURCES
     src/core/functions/scalar/decrypt_vectorized.cpp
     src/core/functions/function_data/encrypt_function_data.cpp
     src/core/functions/cast/varchar_cast.cpp
-    src/core/functions/table/encrypt_table.cpp
-    src/core/functions/table/kms/kms.cpp
     src/core/functions/secrets/authentication.cpp
     src/core/utils/vcrypt_utils.cpp
     src/core/crypto/crypto_primitives.cpp

@@ -5,8 +5,6 @@
 #include "duckdb/common/types.hpp"
 #include "mbedtls_wrapper.hpp"
 
-#define BATCH_SIZE 128
-
 namespace vcrypt {
 namespace core {
 
