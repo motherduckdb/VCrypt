@@ -33,20 +33,14 @@ VCryptFunctionLocalState::VCryptFunctionLocalState(ClientContext &context, Encry
 
   // For variable-sized data we need to be able to resize the buffer
   if (type == LogicalType::VARCHAR) {
-    // version byte + offsets (BATCH_SIZE * sizeof(uint32_t) + BATCH_SIZE * 16 bytes (initial string length)
-    data_size = 1 + BATCH_SIZE * sizeof(uint64_t) + sizeof(string_t) * BATCH_SIZE;
+    // version byte + offsets (BATCH_SIZE * sizeof(uint64_t) + BATCH_SIZE * 16 bytes (initial string length)
+    data_size = 1 + BATCH_SIZE * (sizeof(uint64_t) + sizeof(string_t));
   } else {
-    data_size = GetTypeIdSize(type.InternalType()) * DEFAULT_STANDARD_VECTOR_SIZE;
+    data_size = 1 + GetTypeIdSize(type.InternalType()) * DEFAULT_STANDARD_VECTOR_SIZE * 2;
   }
 
   max_buffer_size = data_size;
   buffer_p = (data_ptr_t)arena.Allocate(data_size);
-
-  if (bind_data->type.id() == LogicalTypeId::VARCHAR) {
-    // allocate buffer for encrypted data
-    // can we delete this?
-    buffer_p = (data_ptr_t)arena.Allocate(128);
-  }
 }
 
 unique_ptr<FunctionLocalState>
