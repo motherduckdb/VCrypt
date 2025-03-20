@@ -209,7 +209,7 @@ size_t AESStateSSL::Finalize(data_ptr_t out, idx_t out_len, data_ptr_t tag,
 extern "C" {
 
 // Call the member function through the factory object
-DUCKDB_EXTENSION_API AESStateSSLFactory *CreateSSLFactory() {
+DUCKDB_EXTENSION_API AESStateSSLFactory *VCryptCreateSSLFactory() {
   return new AESStateSSLFactory();
 };
 }
