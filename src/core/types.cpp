@@ -104,6 +104,33 @@ LogicalType EncryptionTypes::GetEncryptionType(LogicalTypeId ltype) {
   }
 }
 
+string EncryptionTypes::ToString(LogicalTypeId ltype) {
+  switch (ltype) {
+  case LogicalType::INTEGER:
+    return "E_INTEGER";
+  case LogicalType::UINTEGER:
+    return "E_UINTEGER";
+  case LogicalType::BIGINT:
+    return "E_BIGINT";
+  case LogicalType::UBIGINT:
+    return "E_UBIGINT";
+  case LogicalType::VARCHAR:
+    return "E_VARCHAR";
+  case LogicalTypeId::DATE:
+    return "E_DATE";
+  case LogicalTypeId::TIMESTAMP:
+    return "E_TIMESTAMP";
+  case LogicalTypeId::CHAR:
+    return "E_CHAR";
+  case LogicalTypeId::FLOAT:
+    return "E_FLOAT";
+  case LogicalTypeId::DOUBLE:
+    return "E_DOUBLE";
+  default:
+    throw InternalException("LogicalType not convertible to Encrypted type");
+  }
+}
+
 // basic encrypted type
 // todo; we can just use one encrypted type, and just emplace the original type in the type modifiers...
 // the encrypted type just then needs an input (the original type)
