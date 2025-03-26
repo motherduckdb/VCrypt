@@ -13,7 +13,7 @@ require tpch
 
 # load the DB from disk
 statement ok
-ATTACH 'lorderkey_tpch_sf1_naive.db' AS encnaive;
+ATTACH 'lship_tpch_sf1_naive.db' AS encnaive;
 
 statement ok
 CALL dbgen(sf=1);
@@ -24,6 +24,12 @@ CREATE SECRET key_2 (
     TOKEN 'ABCDEFGHIJKLMNOP',
     LENGTH 16
 );
+
+statement ok
+CREATE TABLE encnaive.lineitem AS
+SELECT
+    encrypt_naive(l_shipmode, 'key_2') AS l_shipmode
+FROM lineitem;
 
 statement ok
 CREATE TABLE encnaive.lineitem AS

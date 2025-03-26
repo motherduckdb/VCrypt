@@ -16,7 +16,6 @@ CREATE SECRET key_1 (
     LENGTH 16
 );
 
-#CREATE TABLE test_1 AS SELECT 1 AS value FROM range(1000);
 statement ok
 CREATE TABLE test_1 AS SELECT row_number() OVER () AS value FROM range(1000);
 
@@ -26,4 +25,6 @@ ALTER TABLE test_1 ADD COLUMN encrypted_values E_INTEGER;
 statement ok
 UPDATE test_1 SET encrypted_values = encrypt(value, 'key_1');
 
-
+query I
+Select * from test_1 limit 10;
+----
