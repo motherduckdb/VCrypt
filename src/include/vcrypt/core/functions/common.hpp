@@ -2,7 +2,7 @@
 #include "vcrypt/common.hpp"
 #include "vcrypt/core/functions/function_data/encrypt_function_data.hpp"
 
-#define BATCH_SIZE 256
+#define BATCH_SIZE 128
 
 namespace vcrypt {
 

@@ -1,0 +1,11 @@
+ATTACH 'demo_sf1.db' as demo_sf1;
+CALL dbgen(sf=1);
+CREATE table demo_sf1.lineitem AS SELECT * from lineitem;
+CREATE TABLE demo_sf1.region AS SELECT * FROM region;
+CREATE TABLE demo_sf1.customer AS SELECT * FROM customer;
+CREATE TABLE demo_sf1.nation AS SELECT * FROM nation;
+CREATE TABLE demo_sf1.supplier AS SELECT * FROM supplier;
+CREATE TABLE demo_sf1.part AS SELECT * FROM part;
+CREATE TABLE demo_sf1.partsupp AS SELECT * FROM partsupp;
+CREATE TABLE demo_sf1.orders AS SELECT * FROM orders;
+CHECKPOINT;
