@@ -41,6 +41,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 
 void VcryptExtension::Load(DuckDB &db) {
   LoadInternal(*db.instance); }
+
 std::string VcryptExtension::Name() { return "vcrypt"; }
 
 std::string VcryptExtension::Version() const {

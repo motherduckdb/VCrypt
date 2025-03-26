@@ -384,6 +384,7 @@ static void DecryptData(DataChunk &args, ExpressionState &state,
                                          counter_vec_u, cipher_vec_u, value_vec_u, result,
                                          lstate, *key, same_nonce, size);
   case LogicalTypeId::INTEGER:
+  case LogicalTypeId::DATE:
     return DecryptDataFixedSize<int32_t>(nonce_hi_u.sel, nonce_lo_u.sel, nonce_hi_data, nonce_lo_data, FlatVector::Validity(result),
                                          counter_vec_u, cipher_vec_u, value_vec_u, result,
                                          lstate, *key, same_nonce, size);
